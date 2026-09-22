@@ -236,6 +236,16 @@
   var decorations = []; // {mesh, localZ} purely visual
   var frontierZ = -6;   // next chunk spawns starting here, decreasing
 
+  // spawn-sequence spacing guard: prevents obstacles — especially jumpable
+  // hurdles — from landing closer together than a runner could clear
+  var MIN_GAP_GENERAL = 5;
+  var MIN_GAP_HURDLE = 13;
+  var lastObstacleZ = 1e9;
+  var lastObstacleWasHurdle = false;
+
+  // loose scattered debris/particles (hay burst, etc.)
+  var particles = []; // {mesh, vel:THREE.Vector3, life}
+
   var ZONE = { FOREST:'forest', FIELD:'field' };
   var currentZone = ZONE.FOREST;
   var zoneRemaining = 40;
@@ -286,7 +296,7 @@
     var mat = new THREE.MeshLambertMaterial({ color:0xd9b25a });
     var m = new THREE.Mesh(new THREE.CylinderGeometry(0.55,0.55,1.0,10), mat);
     m.position.y = 0.55;
-    return { mesh:m, halfW:0.5, halfD:0.4 };
+    return { mesh:m, halfW:0.5, halfD:0.4, isHayBale:true };
   }
   function makeFenceObstacle(){
     var g = new THREE.Group();
@@ -350,11 +360,18 @@
 
     // obstacles: 0-2 per chunk, skip a safe intro chunk
     var obstacleCount = (chunks.length <= 2) ? 0 : (1 + (Math.random()<0.55 ? 1 : 0));
-    var usedZ = [];
     for(var j=0;j<obstacleCount;j++){
       var oz = centerZ + (Math.random()-0.5)*(CHUNK_LEN-6);
-      var picked;
       var wantHurdle = Math.random() < 0.4;
+
+      // enforce minimum spacing from the previously placed obstacle in the
+      // spawn sequence, so two jumpable hurdles never end up back-to-back
+      var requiredGap = (wantHurdle || lastObstacleWasHurdle) ? MIN_GAP_HURDLE : MIN_GAP_GENERAL;
+      if(lastObstacleZ - oz < requiredGap){
+        continue; // too close to the previous obstacle — skip this slot
+      }
+
+      var picked;
       if(wantHurdle){
         picked = (zone === ZONE.FOREST) ? makeLowLogHurdle() : makeLowRailHurdle();
         picked.mesh.position.x = 0;
@@ -375,8 +392,12 @@
         halfD:picked.halfD,
         jumpable: !!picked.jumpable,
         clearHeight: picked.clearHeight || 0,
+        isHayBale: !!picked.isHayBale,
+        nearMissDone: false,
         localZ: oz
       });
+      lastObstacleZ = oz;
+      lastObstacleWasHurdle = wantHurdle;
     }
 
     frontierZ -= CHUNK_LEN;
@@ -398,6 +419,10 @@
     zoneRemaining = 40;
     world.position.z = 0;
     worldZ = 0;
+    lastObstacleZ = 1e9;
+    lastObstacleWasHurdle = false;
+    particles.forEach(function(p){ world.remove(p.mesh); });
+    particles = [];
     while(frontierZ + worldZ > FAR_CLIP){ spawnChunk(); }
   }
 
@@ -490,6 +515,64 @@
   boar.rotation.y = Math.PI; // face the same forward direction as the scout
   scene.add(boar);
 
+  // dazed stars, shown briefly after the boar plows into something
+  function makeStarMesh(color){
+    var shape = new THREE.Shape();
+    var spikes = 5, outerR = 0.09, innerR = 0.04;
+    for(var i=0;i<spikes*2;i++){
+      var r = (i%2===0) ? outerR : innerR;
+      var a = (i/(spikes*2))*Math.PI*2 - Math.PI/2;
+      var x = Math.cos(a)*r, y = Math.sin(a)*r;
+      if(i===0) shape.moveTo(x,y); else shape.lineTo(x,y);
+    }
+    shape.closePath();
+    var geo = new THREE.ShapeGeometry(shape);
+    var mat = new THREE.MeshBasicMaterial({ color: color, side: THREE.DoubleSide });
+    return new THREE.Mesh(geo, mat);
+  }
+  var boarStarGroup = new THREE.Group();
+  boarStarGroup.position.set(0, 1.0, 0.2);
+  boarStarGroup.visible = false;
+  for(var si=0; si<3; si++){
+    var star = makeStarMesh(0xffe066);
+    var ang = (si/3)*Math.PI*2;
+    star.position.set(Math.cos(ang)*0.28, Math.sin(ang)*0.08, Math.sin(ang)*0.1);
+    star.userData.angleOffset = ang;
+    boarStarGroup.add(star);
+  }
+  boar.add(boarStarGroup);
+
+  var boarDazedTimer = 0;
+  var BOAR_DAZE_DURATION = 1.15;
+  var boarJumpTimer = 0;
+  var BOAR_JUMP_DURATION = 0.42;
+
+  function spawnHayBurst(x, z){
+    var mat = new THREE.MeshLambertMaterial({ color:0xe0bb63 });
+    for(var k=0;k<7;k++){
+      var wisp = new THREE.Mesh(new THREE.BoxGeometry(0.14,0.04,0.05), mat);
+      wisp.position.set(x, 0.5, z);
+      wisp.rotation.set(Math.random()*Math.PI, Math.random()*Math.PI, Math.random()*Math.PI);
+      world.add(wisp);
+      var ang2 = Math.random()*Math.PI*2;
+      var spd = 1.4 + Math.random()*1.8;
+      particles.push({
+        mesh: wisp,
+        vel: new THREE.Vector3(Math.cos(ang2)*spd, 2.2 + Math.random()*1.6, Math.sin(ang2)*spd),
+        life: 0.7 + Math.random()*0.3
+      });
+    }
+  }
+
+  function triggerHayBaleNearMiss(o){
+    o.nearMissDone = true;
+    world.remove(o.mesh);
+    spawnHayBurst(o.mesh.position.x, o.mesh.position.z);
+    boarDazedTimer = BOAR_DAZE_DURATION;
+    boarStarGroup.visible = true;
+    catchGap = Math.min(catchGap + 0.6, 4.0);
+  }
+
   // ---------- INPUT / TILT CALIBRATION ----------
   var controlMode = 'tilt'; // 'tilt' | 'touch'
   var baselineGamma = 0;
@@ -578,7 +661,7 @@
   // ---------- GAME STATE ----------
   var state = 'idle'; // idle, calibrating, countdown, playing, over
   var playerX = 0, playerTargetX = 0;
-  var speed = 5.5, baseSpeed = 5.5;
+  var speed = 6.4, baseSpeed = 6.4;
   var distance = 0;
   var catchGap = 3.2;
   var runPhase = 0;
@@ -605,6 +688,10 @@
     playerY = 0; playerVY = 0; onGround = true;
     jumpArmed = true;
     player.position.set(0,0,0);
+    boarDazedTimer = 0;
+    boarJumpTimer = 0;
+    boarStarGroup.visible = false;
+    boar.rotation.z = 0;
   }
 
   startBtn.addEventListener('click', function(){
@@ -774,6 +861,7 @@
     }
 
     // obstacles: move/recycle + collide
+    var NEAR_MISS_MARGIN = 0.32;
     for(i=obstacles.length-1;i>=0;i--){
       var o = obstacles[i];
       var visZ = o.localZ + worldZ;
@@ -783,28 +871,83 @@
         continue;
       }
       var oHalfD = (o.halfD !== undefined) ? o.halfD : 0.4;
-      if(Math.abs(visZ) < (PLAYER_HALF_D + oHalfD)){
+      var zNear = Math.abs(visZ) < (PLAYER_HALF_D + oHalfD);
+      if(zNear){
         if(o.jumpable){
           if(playerY < o.clearHeight){
             endRun();
             return;
           }
-        } else if(Math.abs(playerX - o.mesh.position.x) < (PLAYER_HALF_W + o.halfW)){
-          endRun();
-          return;
+        } else {
+          var combined = PLAYER_HALF_W + o.halfW;
+          var lateralDist = Math.abs(playerX - o.mesh.position.x);
+          if(lateralDist < combined){
+            endRun();
+            return;
+          }
+          if(o.isHayBale && !o.nearMissDone && lateralDist < combined + NEAR_MISS_MARGIN){
+            triggerHayBaleNearMiss(o);
+          }
         }
       }
     }
 
-    // boar catch-up
-    catchGap -= dt*0.045;
+    // scattered particles (hay burst debris)
+    for(i=particles.length-1;i>=0;i--){
+      var p = particles[i];
+      p.life -= dt;
+      if(p.life <= 0){
+        world.remove(p.mesh);
+        particles.splice(i,1);
+        continue;
+      }
+      p.vel.y -= 9*dt;
+      p.mesh.position.x += p.vel.x*dt;
+      p.mesh.position.y += p.vel.y*dt;
+      p.mesh.position.z += p.vel.z*dt;
+      if(p.mesh.position.y < 0.05){ p.mesh.position.y = 0.05; p.vel.y *= -0.3; p.vel.x *= 0.6; p.vel.z *= 0.6; }
+      p.mesh.rotation.x += dt*6;
+      p.mesh.rotation.z += dt*4;
+    }
+
+    // boar catch-up (paused briefly while dazed after plowing into hay)
+    if(boarDazedTimer > 0){
+      boarDazedTimer -= dt;
+      if(boarDazedTimer <= 0){ boarStarGroup.visible = false; }
+    } else {
+      catchGap -= dt*0.045;
+    }
     catchGap = Math.max(catchGap, -0.2);
     if(catchGap <= 0.35){
       endRun();
       return;
     }
-    boar.position.set(playerX*0.85, 0, catchGap);
+
+    // boar hops over any jumpable hurdle it is currently passing
+    if(boarJumpTimer <= 0){
+      for(var bk=0;bk<obstacles.length;bk++){
+        var bo = obstacles[bk];
+        if(!bo.jumpable) continue;
+        var boVisZ = bo.localZ + worldZ;
+        if(boVisZ > catchGap - 0.5 && boVisZ < catchGap + 1.0){
+          boarJumpTimer = BOAR_JUMP_DURATION;
+          break;
+        }
+      }
+    }
+    var boarHopY = 0;
+    if(boarJumpTimer > 0){
+      boarJumpTimer -= dt;
+      var jt = 1 - Math.max(0, boarJumpTimer)/BOAR_JUMP_DURATION;
+      boarHopY = Math.sin(Math.PI*Math.min(1,jt)) * 0.5;
+    }
+
+    boar.position.set(playerX*0.85, boarHopY, catchGap);
     boar.position.x += Math.sin(runPhase*0.7)*0.15;
+    boar.rotation.z = (boarDazedTimer > 0) ? Math.sin(runPhase*3)*0.14 : 0;
+    if(boarStarGroup.visible){
+      boarStarGroup.rotation.y += dt*4;
+    }
     boarLegs.forEach(function(leg, idx){
       leg.rotation.x = Math.sin(runPhase*1.4 + idx*Math.PI/2)*0.5;
     });
