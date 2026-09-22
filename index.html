@@ -111,7 +111,7 @@
   <div class="overlay" id="startScreen">
     <div class="badge">🌲 leśna ucieczka · 3D</div>
     <h1>Dzik goni harcerza!</h1>
-    <p>Biegniesz przed siebie przez las i pola, a dzik depcze ci po piętach. Przechylaj telefon w lewo i prawo, żeby wymijać przeszkody bokiem, a pochyl go do przodu (na plecy), żeby przeskoczyć te niskie, których nie da się obejść.</p>
+    <p>Biegniesz przed siebie przez las i pola, a dzik depcze ci po piętach. Przechylaj telefon w lewo i prawo, żeby wymijać przeszkody bokiem, a pochyl go do przodu lub do tyłu, żeby przeskoczyć niskie przeszkody. Wysokich płotków i przeszkód nie da się przeskoczyć — trzeba je wyminąć bokiem.</p>
     <button class="btn" id="startBtn">Rozpocznij</button>
     <div class="modeNote" id="supportNote"></div>
     <div class="modeNote">Jeśli grasz z podglądu w aplikacji Claude, otwórz ten link wprost w przeglądarce telefonu (Chrome/Safari) — osadzony podgląd czasem blokuje czujnik przechyłu.</div>
@@ -127,7 +127,7 @@
 
   <div class="overlay hidden" id="countdownScreen">
     <div class="countdown" id="countdownVal">3</div>
-    <p>Lewo/prawo — skręcasz. Pochyl telefon do przodu (na plecy) — skaczesz.</p>
+    <p>Lewo/prawo — skręcasz. Pochyl telefon do przodu lub do tyłu — skaczesz.</p>
   </div>
 
   <div class="overlay hidden" id="overScreen">
@@ -285,6 +285,37 @@
     m.position.y = 0.38;
     return { mesh:m, halfW:0.78, halfD:0.34, jumpable:false };
   }
+  // a tree fallen across only half the path — the other half stays clear,
+  // but it's too wide (and lying flat and heavy) to jump, so it must be dodged
+  function makeFallenTreeHalf(side){
+    var mat = new THREE.MeshLambertMaterial({ color:0x5a3d24 });
+    var L = LANE_HALF*1.2;
+    var m = new THREE.Mesh(new THREE.CylinderGeometry(0.34,0.3,L,8), mat);
+    m.rotation.z = Math.PI/2;
+    m.position.y = 0.34;
+    m.position.x = side*(LANE_HALF - L/2 + 0.15);
+    // a couple of stubby branches for silhouette
+    var branchMat = new THREE.MeshLambertMaterial({ color:0x4a3320 });
+    for(var bi=0; bi<3; bi++){
+      var br = new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.08,0.4,5), branchMat);
+      br.position.set((bi-1)*L*0.28, 0.5, 0);
+      br.rotation.z = 0.6;
+      m.add(br);
+    }
+    return { mesh:m, halfW:L/2, halfD:0.32, jumpable:false, fixedX:true };
+  }
+  // a standing tree trunk placed mid-lane — must be dodged like a rock
+  function makeStandingTreeObstacle(){
+    var trunkMat = new THREE.MeshLambertMaterial({ color:0x4a3320 });
+    var leafMat = new THREE.MeshLambertMaterial({ color:0x1f4a26 });
+    var g = new THREE.Group();
+    var trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.17,0.21,1.3,7), trunkMat);
+    trunk.position.y = 0.65;
+    var leaf = new THREE.Mesh(new THREE.ConeGeometry(0.7,1.5,7), leafMat);
+    leaf.position.y = 1.7;
+    g.add(trunk, leaf);
+    return { mesh:g, halfW:0.4, halfD:0.4, jumpable:false };
+  }
   function makeRockObstacle(){
     var mat = new THREE.MeshLambertMaterial({ color:0x63625b });
     var m = new THREE.Mesh(new THREE.DodecahedronGeometry(0.55,0), mat);
@@ -298,16 +329,18 @@
     m.position.y = 0.55;
     return { mesh:m, halfW:0.5, halfD:0.4, isHayBale:true };
   }
+  // tall fence — too high to jump, must be dodged sideways
   function makeFenceObstacle(){
     var g = new THREE.Group();
     var mat = new THREE.MeshLambertMaterial({ color:0x8a6a3f });
     var rail = new THREE.Mesh(new THREE.BoxGeometry(2.0,0.14,0.14), mat);
-    rail.position.y = 0.7;
-    var rail2 = rail.clone(); rail2.position.y = 0.35;
-    var p1 = new THREE.Mesh(new THREE.BoxGeometry(0.14,0.9,0.14), mat); p1.position.set(-0.9,0.45,0);
+    rail.position.y = 1.25;
+    var rail2 = rail.clone(); rail2.position.y = 0.85;
+    var rail3 = rail.clone(); rail3.position.y = 0.45;
+    var p1 = new THREE.Mesh(new THREE.BoxGeometry(0.14,1.5,0.14), mat); p1.position.set(-0.9,0.75,0);
     var p2 = p1.clone(); p2.position.x = 0.9;
-    g.add(rail, rail2, p1, p2);
-    return { mesh:g, halfW:0.95, halfD:0.14 };
+    g.add(rail, rail2, rail3, p1, p2);
+    return { mesh:g, halfW:0.95, halfD:0.14, jumpable:false };
   }
 
   // Low hurdles: span the full lane, cannot be dodged sideways — must be jumped.
@@ -376,13 +409,22 @@
         picked = (zone === ZONE.FOREST) ? makeLowLogHurdle() : makeLowRailHurdle();
         picked.mesh.position.x = 0;
       } else {
-        var ox = (Math.random()*2-1) * (LANE_HALF-0.6);
+  var ox = (Math.random()*2-1) * (LANE_HALF-0.6);
         if(zone === ZONE.FOREST){
-          picked = Math.random()<0.5 ? makeLogObstacle() : makeRockObstacle();
+          var forestRoll = Math.random();
+          if(forestRoll < 0.22){
+            picked = makeFallenTreeHalf(Math.random()<0.5 ? -1 : 1);
+          } else if(forestRoll < 0.45){
+            picked = makeStandingTreeObstacle();
+          } else if(forestRoll < 0.72){
+            picked = makeLogObstacle();
+          } else {
+            picked = makeRockObstacle();
+          }
         } else {
           picked = Math.random()<0.5 ? makeHayBaleObstacle() : makeFenceObstacle();
         }
-        picked.mesh.position.x = ox;
+        if(!picked.fixedX){ picked.mesh.position.x = ox; }
       }
       picked.mesh.position.z = oz;
       world.add(picked.mesh);
@@ -671,6 +713,18 @@
   var JUMP_VELOCITY = 5.6;
   var GRAVITY = -15.5;
 
+  // "caught" sequence: a brief visible lunge before the round actually ends
+  var CAUGHT_DURATION = 0.85;
+  var caughtTimer = 0;
+  var caughtGapStart = 0;
+
+  function triggerCaught(){
+    if(state !== 'playing') return;
+    state = 'caught';
+    caughtTimer = CAUGHT_DURATION;
+    caughtGapStart = catchGap;
+  }
+
   function tryJump(){
     if(state === 'playing' && onGround){
       playerVY = JUMP_VELOCITY;
@@ -688,6 +742,8 @@
     playerY = 0; playerVY = 0; onGround = true;
     jumpArmed = true;
     player.position.set(0,0,0);
+    player.rotation.x = 0;
+    caughtTimer = 0;
     boarDazedTimer = 0;
     boarJumpTimer = 0;
     boarStarGroup.visible = false;
@@ -805,13 +861,13 @@
     player.rotation.z = (playerTargetX - playerX) * -0.15;
     player.rotation.y = Math.PI + (playerTargetX-playerX)*0.25;
 
-    // jump trigger: pitching the phone forward (toward lying on its back)
+    // jump trigger: pitching the phone forward OR backward away from baseline
     if(controlMode === 'tilt'){
-      var forwardTilt = baselineBeta - currentBeta;
-      if(forwardTilt > JUMP_TILT_THRESHOLD && jumpArmed){
+      var pitchTilt = Math.abs(baselineBeta - currentBeta);
+      if(pitchTilt > JUMP_TILT_THRESHOLD && jumpArmed){
         tryJump();
         jumpArmed = false;
-      } else if(forwardTilt < JUMP_TILT_THRESHOLD*0.45){
+      } else if(pitchTilt < JUMP_TILT_THRESHOLD*0.45){
         jumpArmed = true;
       }
     }
@@ -875,14 +931,14 @@
       if(zNear){
         if(o.jumpable){
           if(playerY < o.clearHeight){
-            endRun();
+            triggerCaught();
             return;
           }
         } else {
           var combined = PLAYER_HALF_W + o.halfW;
           var lateralDist = Math.abs(playerX - o.mesh.position.x);
           if(lateralDist < combined){
-            endRun();
+            triggerCaught();
             return;
           }
           if(o.isHayBale && !o.nearMissDone && lateralDist < combined + NEAR_MISS_MARGIN){
@@ -919,7 +975,7 @@
     }
     catchGap = Math.max(catchGap, -0.2);
     if(catchGap <= 0.35){
-      endRun();
+      triggerCaught();
       return;
     }
 
@@ -962,9 +1018,41 @@
     scoreVal.textContent = Math.floor(distance) + ' m';
 
     if(controlMode === 'tilt'){
-      debugTag.textContent = 'skręt: ' + (currentGamma - baselineGamma).toFixed(1) + '°  |  skok: ' + (baselineBeta - currentBeta).toFixed(1) + '°' + (onGround ? '' : ' (w locie)');
+      debugTag.textContent = 'skręt: ' + (currentGamma - baselineGamma).toFixed(1) + '°  |  skok: ' + (currentBeta - baselineBeta).toFixed(1) + '°' + (onGround ? '' : ' (w locie)');
     } else {
       debugTag.textContent = 'sterowanie dotykiem — przeciągnij: skręt, stuknij: skok';
+    }
+  }
+
+  function updateCaught(dt){
+    dt = Math.min(dt, 0.05);
+    caughtTimer -= dt;
+    var t = 1 - Math.max(0, caughtTimer) / CAUGHT_DURATION; // 0 -> 1
+    var lunge = Math.min(1, t*1.4); // reaches 1 slightly before the sequence ends
+
+    // boar lunges the rest of the way to the player, low and fast
+    var gap = caughtGapStart * (1 - lunge);
+    boar.position.set(playerX*0.85 + Math.sin(runPhase*0.7)*0.15*(1-lunge), 0, gap);
+    boar.rotation.z = 0;
+    boarLegs.forEach(function(leg, idx){
+      leg.rotation.x = Math.sin(runPhase*2.2 + idx*Math.PI/2)*0.6;
+    });
+    runPhase += dt*14;
+
+    // scout stumbles forward and goes down
+    player.rotation.x = -t*1.15;
+    player.position.y = Math.max(0, playerY - t*0.35);
+    pLegL.rotation.x = -0.6;
+    pLegR.rotation.x = 0.3;
+    pArmL.rotation.x = 0.7;
+    pArmR.rotation.x = -0.2;
+
+    // world keeps drifting slightly so the moment doesn't feel frozen
+    worldZ += speed*0.25*dt;
+    world.position.z = worldZ;
+
+    if(caughtTimer <= 0){
+      endRun();
     }
   }
 
@@ -982,6 +1070,8 @@
 
     if(state === 'playing'){
       update(dt);
+    } else if(state === 'caught'){
+      updateCaught(dt);
     } else {
       runPhase += dt*4;
       pLegL.rotation.x = Math.sin(runPhase)*0.3;
