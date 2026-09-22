@@ -112,7 +112,7 @@
   <div class="overlay" id="startScreen">
     <div class="badge">🌲 leśna ucieczka · 3D</div>
     <h1>Dzik goni harcerza!</h1>
-    <p>Biegniesz przed siebie przez las i pola, a dzik depcze ci po piętach. Przechylaj telefon w lewo i prawo, żeby wymijać przeszkody bokiem, a pochyl go do przodu lub do tyłu, żeby przeskoczyć niskie przeszkody. Wysokich płotków i przeszkód nie da się przeskoczyć — trzeba je wyminąć bokiem. Zbieraj szyszki leżące na ścieżce — po zebraniu 5 kolejne pochylenie telefonu odwraca harcerza w stronę dzika i rzuca w niego szyszkami, ogłuszając go na chwilę.</p>
+    <p>Biegniesz przed siebie przez las, pola i rzeki, a dzik depcze ci po piętach. Przechylaj telefon w lewo i prawo, żeby wymijać przeszkody bokiem, a pochyl go do przodu lub do tyłu, żeby przeskoczyć niskie przeszkody. Wysokich płotków i przeszkód nie da się przeskoczyć — trzeba je wyminąć bokiem. Zbieraj szyszki leżące na ścieżce — po zebraniu 8 harcerz sam odwróci się i w zwolnionym tempie obrzuci nimi dzika. W rzece popłyniesz — pochylenie telefonu wynurza cię na chwilę, potem znów nurkujesz.</p>
     <button class="btn" id="startBtn">Rozpocznij</button>
     <div class="modeNote" id="supportNote"></div>
     <div class="modeNote">Jeśli grasz z podglądu w aplikacji Claude, otwórz ten link wprost w przeglądarce telefonu (Chrome/Safari) — osadzony podgląd czasem blokuje czujnik przechyłu.</div>
@@ -128,7 +128,7 @@
 
   <div class="overlay hidden" id="countdownScreen">
     <div class="countdown" id="countdownVal">3</div>
-    <p>Lewo/prawo — skręcasz. Pochyl telefon do przodu lub do tyłu — skaczesz (albo rzucasz szyszkami, jeśli masz ich 5).</p>
+    <p>Lewo/prawo — skręcasz. Pochyl telefon do przodu lub do tyłu — skaczesz, a w rzece wynurzasz się.</p>
   </div>
 
   <div class="overlay hidden" id="overScreen">
@@ -252,14 +252,48 @@
   // loose scattered debris/particles (hay burst, etc.)
   var particles = []; // {mesh, vel:THREE.Vector3, life}
 
-  var ZONE = { FOREST:'forest', FIELD:'field' };
+  var ZONE = { FOREST:'forest', FIELD:'field', RIVER:'river' };
+  // relative frequency when picking the next zone — river is deliberately
+  // rare, forest more common than field
+  var ZONE_WEIGHTS = [
+    { zone: ZONE.FOREST, w: 5 },
+    { zone: ZONE.FIELD,  w: 3 },
+    { zone: ZONE.RIVER,  w: 1 }
+  ];
+  function pickNextZone(excludeZone){
+    var pool = ZONE_WEIGHTS.filter(function(z){ return z.zone !== excludeZone; });
+    var total = pool.reduce(function(s,z){ return s + z.w; }, 0);
+    var r = Math.random() * total;
+    for(var i=0;i<pool.length;i++){
+      r -= pool[i].w;
+      if(r <= 0) return pool[i].zone;
+    }
+    return pool[pool.length-1].zone;
+  }
   var currentZone = ZONE.FOREST;
   var zoneRemaining = 40;
+  // one entry per spawned chunk — lets us find which zone is actually under
+  // the player right now (currentZone itself tracks the *frontier* zone,
+  // several chunks ahead of where the player is standing)
+  var zoneMarkers = [];
 
   function zoneColor(zone){
-    return zone === ZONE.FOREST ? 0x24391f : 0xb08a34;
+    if(zone === ZONE.FOREST) return 0x24391f;
+    if(zone === ZONE.FIELD) return 0xb08a34;
+    return 0x2d6ea3; // river water
   }
-  function pathColor(){ return 0x6b4a2c; }
+  function pathColor(zone){
+    if(zone === ZONE.RIVER) return 0x3d8bc4; // lighter central current
+    return 0x6b4a2c;
+  }
+  function getActiveZoneMarker(){
+    for(var zi=0; zi<zoneMarkers.length; zi++){
+      var m = zoneMarkers[zi];
+      var visZ = m.z + worldZ;
+      if(Math.abs(visZ) <= CHUNK_LEN/2) return m;
+    }
+    return null;
+  }
 
   function makeTree(x, z){
     var g = new THREE.Group();
@@ -282,6 +316,21 @@
     m.rotation.z = Math.PI/2;
     m.position.set(x, 0.55, z);
     return m;
+  }
+
+  function makeReeds(x, z){
+    var g = new THREE.Group();
+    var mat = new THREE.MeshLambertMaterial({ color:0x3f6b35 });
+    var count = 3 + Math.floor(Math.random()*3);
+    for(var i=0;i<count;i++){
+      var h = 0.5 + Math.random()*0.5;
+      var blade = new THREE.Mesh(new THREE.ConeGeometry(0.03, h, 4), mat);
+      blade.position.set((Math.random()-0.5)*0.3, h/2, (Math.random()-0.5)*0.3);
+      blade.rotation.z = (Math.random()-0.5)*0.3;
+      g.add(blade);
+    }
+    g.position.set(x, 0, z);
+    return g;
   }
 
   function makeLogObstacle(){
@@ -379,6 +428,7 @@
   function spawnChunk(){
     var zone = currentZone;
     var centerZ = frontierZ - CHUNK_LEN/2;
+    zoneMarkers.push({ z: centerZ, zone: zone });
     var groundMat = new THREE.MeshLambertMaterial({ color: zoneColor(zone) });
     var ground = new THREE.Mesh(new THREE.PlaneGeometry(16, CHUNK_LEN), groundMat);
     ground.rotation.x = -Math.PI/2;
@@ -386,7 +436,7 @@
     world.add(ground);
     chunks.push({ mesh:ground, centerLocalZ: centerZ });
 
-    var pathMat = new THREE.MeshLambertMaterial({ color: pathColor() });
+    var pathMat = new THREE.MeshLambertMaterial({ color: pathColor(zone) });
     var path = new THREE.Mesh(new THREE.PlaneGeometry(LANE_HALF*2+0.6, CHUNK_LEN), pathMat);
     path.rotation.x = -Math.PI/2;
     path.position.set(0, 0.01, centerZ);
@@ -398,10 +448,13 @@
     for(var i=0;i<decoCount;i++){
       var dz = centerZ + (Math.random()-0.5)*CHUNK_LEN;
       var side = Math.random()<0.5 ? -1 : 1;
-      var dx = side*(LANE_HALF + 1.0 + Math.random()*3.5);
+      var dx = zone === ZONE.RIVER
+        ? side*(LANE_HALF + 0.1 + Math.random()*1.2)
+        : side*(LANE_HALF + 1.0 + Math.random()*3.5);
       var mesh;
       if(zone === ZONE.FOREST){ mesh = makeTree(dx, 0); }
-      else { mesh = makeHay(dx, 0); }
+      else if(zone === ZONE.FIELD){ mesh = makeHay(dx, 0); }
+      else { mesh = makeReeds(dx, 0); }
       mesh.position.z = dz;
       world.add(mesh);
       decorations.push({ mesh:mesh, localZ: dz });
@@ -422,20 +475,24 @@
       }
     }
 
-    // pinecone pickups scattered along the path
-    var pineconeRoll = Math.random();
-    var pineconeSpawnCount = pineconeRoll < 0.55 ? 2 : (pineconeRoll < 0.9 ? 1 : 3);
-    for(var pk=0; pk<pineconeSpawnCount; pk++){
-      var pz = centerZ + (Math.random()-0.5)*(CHUNK_LEN-4);
-      var px = (Math.random()*2-1) * (LANE_HALF-0.5);
-      var pmesh = makePineconePickup();
-      pmesh.position.set(px, 0, pz);
-      world.add(pmesh);
-      pinecones.push({ mesh:pmesh, localZ: pz });
+    // pinecone pickups scattered along the path (not in the river) — spread
+    // into non-overlapping slots so two never land right next to each other
+    if(zone !== ZONE.RIVER){
+      var pineconeSpawnCount = 1 + (Math.random() < 0.35 ? 1 : 0);
+      var pineconeSlotLen = (CHUNK_LEN-4) / pineconeSpawnCount;
+      for(var pk=0; pk<pineconeSpawnCount; pk++){
+        var slotStart = centerZ - (CHUNK_LEN-4)/2 + pk*pineconeSlotLen;
+        var pz = slotStart + Math.random()*pineconeSlotLen;
+        var px = (Math.random()*2-1) * (LANE_HALF-0.5);
+        var pmesh = makePineconePickup();
+        pmesh.position.set(px, 0, pz);
+        world.add(pmesh);
+        pinecones.push({ mesh:pmesh, localZ: pz });
+      }
     }
 
-    // obstacles: 0-2 per chunk, skip a safe intro chunk
-    var obstacleCount = (chunks.length <= 2) ? 0 : (1 + (Math.random()<0.55 ? 1 : 0));
+    // obstacles: 0-2 per chunk, skip a safe intro chunk and the river (swum, not dodged)
+    var obstacleCount = (zone === ZONE.RIVER || chunks.length <= 2) ? 0 : (1 + (Math.random()<0.55 ? 1 : 0));
     for(var j=0;j<obstacleCount;j++){
       var oz = centerZ + (Math.random()-0.5)*(CHUNK_LEN-6);
       var wantHurdle = Math.random() < 0.4;
@@ -490,8 +547,10 @@
 
     zoneRemaining -= CHUNK_LEN;
     if(zoneRemaining <= 0){
-      currentZone = (Math.random()<0.65) ? (currentZone===ZONE.FOREST?ZONE.FIELD:ZONE.FOREST) : currentZone;
-      zoneRemaining = 40 + Math.random()*35;
+      if(Math.random() < 0.65){
+        currentZone = pickNextZone(currentZone);
+      }
+      zoneRemaining = (currentZone === ZONE.RIVER) ? (14 + Math.random()*10) : (40 + Math.random()*35);
     }
   }
 
@@ -500,7 +559,7 @@
     obstacles.forEach(function(o){ world.remove(o.mesh); });
     decorations.forEach(function(d){ world.remove(d.mesh); });
     pinecones.forEach(function(p){ world.remove(p.mesh); });
-    chunks = []; obstacles = []; decorations = []; pinecones = [];
+    chunks = []; obstacles = []; decorations = []; pinecones = []; zoneMarkers = [];
     frontierZ = -6;
     currentZone = Math.random()<0.5?ZONE.FOREST:ZONE.FIELD;
     zoneRemaining = 40;
@@ -517,11 +576,16 @@
   var player = new THREE.Group();
   var pLegL, pLegR, pArmL, pArmR, pHip;
   (function buildPlayer(){
-    var shirt = new THREE.MeshLambertMaterial({ color:0x5b7247 });
+    // ZHR field uniform: khaki shirt, dark olive shorts, bare knee, dark
+    // socks/boots, dark neckerchief, olive cap — kept low-poly/boxy
+    var shirt = new THREE.MeshLambertMaterial({ color:0xc7b483 });
     var skin = new THREE.MeshLambertMaterial({ color:0xe8b98a });
-    var scarf = new THREE.MeshLambertMaterial({ color:0xc1443c });
-    var hat = new THREE.MeshLambertMaterial({ color:0x8a7355 });
-    var short = new THREE.MeshLambertMaterial({ color:0x3f3a2e });
+    var scarf = new THREE.MeshLambertMaterial({ color:0x3d4a3a });
+    var hat = new THREE.MeshLambertMaterial({ color:0x5c5c46 });
+    var shortsMat = new THREE.MeshLambertMaterial({ color:0x3c4a34 });
+    var sockMat = new THREE.MeshLambertMaterial({ color:0x232323 });
+    var beltMat = new THREE.MeshLambertMaterial({ color:0x2b2b2b });
+    var pocketMat = new THREE.MeshLambertMaterial({ color:0xaf9d6c });
 
     pHip = new THREE.Group(); pHip.position.y = 0.62;
     player.add(pHip);
@@ -529,6 +593,17 @@
     var torso = new THREE.Mesh(new THREE.BoxGeometry(0.5,0.55,0.3), shirt);
     torso.position.y = 0.34;
     pHip.add(torso);
+
+    var pocketL = new THREE.Mesh(new THREE.BoxGeometry(0.13,0.12,0.03), pocketMat);
+    pocketL.position.set(-0.13,0.4,0.16);
+    pHip.add(pocketL);
+    var pocketR = pocketL.clone();
+    pocketR.position.x = 0.13;
+    pHip.add(pocketR);
+
+    var belt = new THREE.Mesh(new THREE.BoxGeometry(0.52,0.06,0.32), beltMat);
+    belt.position.y = 0.06;
+    pHip.add(belt);
 
     var scarfMesh = new THREE.Mesh(new THREE.ConeGeometry(0.32,0.34,4), scarf);
     scarfMesh.position.set(0,0.56,0.03);
@@ -542,18 +617,47 @@
     var hatMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.24,0.26,0.14,10), hat);
     hatMesh.position.y = 0.92;
     pHip.add(hatMesh);
+    var hatBrim = new THREE.Mesh(new THREE.BoxGeometry(0.2,0.03,0.12), hat);
+    hatBrim.position.set(0,0.87,0.2);
+    pHip.add(hatBrim);
 
-    function makeLimb(mat, w,h,d){
-      var m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mat);
+    // legs: shorts hem, bare knee gap, then dark sock/boot — stacked boxes
+    function makeLegLimb(){
       var pivot = new THREE.Group();
-      m.position.y = -h/2;
-      pivot.add(m);
+      var segs = [
+        { mat: shortsMat, h: 0.14, w: 0.17 },
+        { mat: skin,      h: 0.14, w: 0.15 },
+        { mat: sockMat,   h: 0.22, w: 0.16 }
+      ];
+      var yCursor = 0;
+      segs.forEach(function(s){
+        var seg = new THREE.Mesh(new THREE.BoxGeometry(s.w, s.h, 0.18), s.mat);
+        seg.position.y = yCursor - s.h/2;
+        pivot.add(seg);
+        yCursor -= s.h;
+      });
       return pivot;
     }
-    pLegL = makeLimb(short, 0.16,0.5,0.18); pLegL.position.set(-0.13,0.06,0);
-    pLegR = makeLimb(short, 0.16,0.5,0.18); pLegR.position.set(0.13,0.06,0);
-    pArmL = makeLimb(shirt, 0.13,0.42,0.15); pArmL.position.set(-0.32,0.55,0);
-    pArmR = makeLimb(shirt, 0.13,0.42,0.15); pArmR.position.set(0.32,0.55,0);
+    // arms: short sleeve, then bare forearm
+    function makeArmLimb(){
+      var pivot = new THREE.Group();
+      var segs = [
+        { mat: shirt, h: 0.22, w: 0.14 },
+        { mat: skin,  h: 0.20, w: 0.12 }
+      ];
+      var yCursor = 0;
+      segs.forEach(function(s){
+        var seg = new THREE.Mesh(new THREE.BoxGeometry(s.w, s.h, 0.15), s.mat);
+        seg.position.y = yCursor - s.h/2;
+        pivot.add(seg);
+        yCursor -= s.h;
+      });
+      return pivot;
+    }
+    pLegL = makeLegLimb(); pLegL.position.set(-0.13,0.06,0);
+    pLegR = makeLegLimb(); pLegR.position.set(0.13,0.06,0);
+    pArmL = makeArmLimb(); pArmL.position.set(-0.32,0.55,0);
+    pArmR = makeArmLimb(); pArmR.position.set(0.32,0.55,0);
     pHip.add(pLegL, pLegR, pArmL, pArmR);
   })();
   player.position.set(0, 0, 0);
@@ -647,6 +751,29 @@
         mesh: wisp,
         vel: new THREE.Vector3(Math.cos(ang2)*spd, 2.2 + Math.random()*1.6, Math.sin(ang2)*spd),
         life: 0.7 + Math.random()*0.3
+      });
+    }
+  }
+
+  // water droplets shaken off the scout — spawned at his current scene
+  // position (he doesn't scroll with `world`, so these go straight to `scene`)
+  function spawnDropletBurst(){
+    var mat = new THREE.MeshLambertMaterial({ color:0x6fb8e0 });
+    for(var k=0;k<4;k++){
+      var d = new THREE.Mesh(new THREE.BoxGeometry(0.05,0.08,0.05), mat);
+      d.position.set(
+        player.position.x + (Math.random()-0.5)*0.3,
+        player.position.y + 0.9 + Math.random()*0.3,
+        player.position.z + (Math.random()-0.5)*0.2
+      );
+      scene.add(d);
+      var ang = Math.random()*Math.PI*2;
+      var spd = 0.5 + Math.random()*0.9;
+      particles.push({
+        mesh: d,
+        vel: new THREE.Vector3(Math.cos(ang)*spd, 1.4 + Math.random()*1.0, Math.sin(ang)*spd),
+        life: 0.35 + Math.random()*0.25,
+        parent: scene
       });
     }
   }
@@ -764,8 +891,8 @@
   var clock = new THREE.Clock();
 
   var playerY = 0, playerVY = 0, onGround = true;
-  var JUMP_VELOCITY = 5.6;
-  var GRAVITY = -15.5;
+  var JUMP_VELOCITY = 5.8;
+  var GRAVITY = -12.5; // floatier than before — more time in the air
 
   // "caught" sequence: a brief visible lunge before the round actually ends
   var CAUGHT_DURATION = 0.85;
@@ -779,32 +906,52 @@
     caughtGapStart = catchGap;
   }
 
-  // pinecone stash: every 5 collected, the jump gesture instead spends them
-  // on a throw at the boar
+  // pinecone stash: every 8 collected, the scout automatically turns and
+  // throws them at the boar — a brief slow-motion cutscene (running and the
+  // world around him visibly slow down for it)
   var pineconeCount = 0;
-  var PINECONE_THROW_COST = 5;
+  var PINECONE_THROW_COST = 8;
   var throwTimer = 0;
-  var THROW_DURATION = 0.55;
+  var THROW_DURATION = 1.2; // real seconds the whole auto-attack cutscene lasts
+  var THROW_SLOWMO_FACTOR = 0.3; // world/run speed multiplier while it plays
   var pineconeProjectile = null;
+
+  // river swimming
+  var inWater = false;
+  var surfaceTimer = 0;
+  var SURFACE_DURATION = 0.7;
+  var WATER_SWIM_Y = -0.28;
+
+  // dripping wet for a while after climbing out of the water
+  var wetTimer = 0;
+  var WET_DURATION = 5.0;
+  var wetDripAccum = 0;
 
   function updatePineconeHUD(){
     pineconeVal.textContent = pineconeCount;
   }
 
   function tryJump(){
-    if(state !== 'playing' || !onGround) return;
-    if(pineconeCount >= PINECONE_THROW_COST && throwTimer <= 0){
-      triggerPineconeThrow();
-    } else {
-      playerVY = JUMP_VELOCITY;
-      onGround = false;
+    if(state !== 'playing' || throwTimer > 0) return;
+    if(inWater){
+      if(surfaceTimer <= 0){
+        surfaceTimer = SURFACE_DURATION;
+        spawnDropletBurst();
+      }
+      return;
     }
+    if(!onGround) return;
+    playerVY = JUMP_VELOCITY;
+    onGround = false;
   }
 
   function triggerPineconeThrow(){
     pineconeCount -= PINECONE_THROW_COST;
     updatePineconeHUD();
     throwTimer = THROW_DURATION;
+    // dazed for the whole would-up + stagger so the boar can't catch him
+    // mid-cutscene
+    boarDazedTimer = Math.max(boarDazedTimer, THROW_DURATION + BOAR_DAZE_DURATION);
     var mat = new THREE.MeshLambertMaterial({ color:0x6b4423 });
     var pmesh = new THREE.Mesh(new THREE.DodecahedronGeometry(0.1,0), mat);
     pmesh.position.set(playerX, 1.05, 0);
@@ -838,6 +985,10 @@
     throwTimer = 0;
     if(pineconeProjectile){ scene.remove(pineconeProjectile.mesh); pineconeProjectile = null; }
     updatePineconeHUD();
+    inWater = false;
+    surfaceTimer = 0;
+    wetTimer = 0;
+    wetDripAccum = 0;
   }
 
   startBtn.addEventListener('click', function(){
@@ -934,7 +1085,11 @@
 
   function update(dt){
     dt = Math.min(dt, 0.05);
-    distance += speed*dt;
+    // world/visual time — slows down during the pinecone-throw cutscene
+    var slowMo = throwTimer > 0 ? THROW_SLOWMO_FACTOR : 1;
+    var wdt = dt * slowMo;
+
+    distance += speed*wdt;
     speed = baseSpeed + Math.min(distance*0.012, 4.5);
 
     // steering
@@ -945,7 +1100,7 @@
     } else if(touchTargetX !== null){
       playerTargetX = touchTargetX;
     }
-    playerX += (playerTargetX - playerX) * Math.min(1, dt*6);
+    playerX += (playerTargetX - playerX) * Math.min(1, wdt*6);
     playerX = Math.max(-LANE_HALF+0.1, Math.min(LANE_HALF-0.1, playerX));
     player.position.x = playerX;
     player.rotation.z = (playerTargetX - playerX) * -0.15;
@@ -967,7 +1122,6 @@
         if(flightT >= 1 && !pineconeProjectile.hitApplied){
           pineconeProjectile.hitApplied = true;
           scene.remove(pineconeProjectile.mesh);
-          boarDazedTimer = Math.max(boarDazedTimer, BOAR_DAZE_DURATION*1.3);
           boarStarGroup.visible = true;
           catchGap = Math.min(catchGap + 0.9, 4.0);
         }
@@ -977,7 +1131,24 @@
       }
     }
 
+    // which zone is actually under the scout right now (currentZone tracks
+    // the frontier chunk, several chunks ahead of where he's standing)
+    var zoneMarker = getActiveZoneMarker();
+    var activeZone = zoneMarker ? zoneMarker.zone : currentZone;
+    var wasInWater = inWater;
+    inWater = (activeZone === ZONE.RIVER);
+    if(inWater && !wasInWater){
+      playerY = 0; playerVY = 0; onGround = true;
+      surfaceTimer = 0;
+      spawnDropletBurst();
+    }
+    if(!inWater && wasInWater){
+      wetTimer = WET_DURATION;
+      wetDripAccum = 0;
+    }
+
     // jump trigger: pitching the phone forward OR backward away from baseline
+    // (in the river this surfaces the scout instead of jumping)
     if(controlMode === 'tilt'){
       var pitchTilt = Math.abs(baselineBeta - currentBeta);
       if(pitchTilt > JUMP_TILT_THRESHOLD && jumpArmed){
@@ -988,31 +1159,50 @@
       }
     }
 
-    // vertical physics (jump / gravity)
-    playerVY += GRAVITY*dt;
-    playerY += playerVY*dt;
+    // vertical physics (jump / gravity) — a no-op while swimming, since
+    // nothing sets playerVY there
+    playerVY += GRAVITY*wdt;
+    playerY += playerVY*wdt;
     if(playerY <= 0){
       playerY = 0; playerVY = 0; onGround = true;
     }
 
-    runPhase += dt*10;
-    if(onGround){
-      var swing = Math.sin(runPhase)*0.6;
-      pLegL.rotation.x = swing;
-      pLegR.rotation.x = -swing;
-      pArmL.rotation.x = -swing*0.8;
-      pArmR.rotation.x = swing*0.8;
-      player.position.y = playerY + Math.abs(Math.sin(runPhase))*0.06;
+    runPhase += wdt*10;
+    if(inWater){
+      if(surfaceTimer > 0){
+        surfaceTimer -= dt;
+        var st = 1 - Math.max(0, surfaceTimer) / SURFACE_DURATION;
+        var breach = Math.sin(Math.PI * Math.min(1, st));
+        player.position.y = WATER_SWIM_Y + breach*0.45;
+      } else {
+        player.position.y = WATER_SWIM_Y + Math.sin(runPhase*0.8)*0.04;
+      }
+      player.rotation.x = 0.25;
+      var swimSwing = Math.sin(runPhase*1.6)*0.5;
+      pLegL.rotation.x = swimSwing;
+      pLegR.rotation.x = -swimSwing;
+      pArmL.rotation.x = Math.sin(runPhase*1.6 + Math.PI)*0.9;
+      pArmR.rotation.x = -Math.sin(runPhase*1.6 + Math.PI)*0.9;
     } else {
-      pLegL.rotation.x = -0.5;
-      pLegR.rotation.x = 0.6;
-      pArmL.rotation.x = 0.4;
-      pArmR.rotation.x = -0.4;
-      player.position.y = playerY;
+      player.rotation.x = 0;
+      if(onGround){
+        var swing = Math.sin(runPhase)*0.6;
+        pLegL.rotation.x = swing;
+        pLegR.rotation.x = -swing;
+        pArmL.rotation.x = -swing*0.8;
+        pArmR.rotation.x = swing*0.8;
+        player.position.y = playerY + Math.abs(Math.sin(runPhase))*0.06;
+      } else {
+        pLegL.rotation.x = -0.5;
+        pLegR.rotation.x = 0.6;
+        pArmL.rotation.x = 0.4;
+        pArmR.rotation.x = -0.4;
+        player.position.y = playerY;
+      }
     }
 
     // world scroll
-    worldZ += speed*dt;
+    worldZ += speed*wdt;
     world.position.z = worldZ;
 
     // spawn / recycle chunks
@@ -1022,6 +1212,12 @@
       if(c.centerLocalZ + worldZ - (CHUNK_LEN/2) > BACK_CLIP){
         world.remove(c.mesh);
         chunks.splice(i,1);
+      }
+    }
+    for(i=zoneMarkers.length-1;i>=0;i--){
+      var zm = zoneMarkers[i];
+      if(zm.z + worldZ - (CHUNK_LEN/2) > BACK_CLIP){
+        zoneMarkers.splice(i,1);
       }
     }
     for(i=decorations.length-1;i>=0;i--){
@@ -1081,15 +1277,18 @@
         pinecones.splice(i,1);
         pineconeCount++;
         updatePineconeHUD();
+        if(pineconeCount >= PINECONE_THROW_COST && throwTimer <= 0){
+          triggerPineconeThrow();
+        }
       }
     }
 
-    // scattered particles (hay burst debris)
+    // scattered particles (hay burst debris, water droplets)
     for(i=particles.length-1;i>=0;i--){
       var p = particles[i];
       p.life -= dt;
       if(p.life <= 0){
-        world.remove(p.mesh);
+        (p.parent || world).remove(p.mesh);
         particles.splice(i,1);
         continue;
       }
@@ -1102,7 +1301,18 @@
       p.mesh.rotation.z += dt*4;
     }
 
-    // boar catch-up (paused briefly while dazed after plowing into hay)
+    // dripping wet for a while after climbing out of the river
+    if(wetTimer > 0){
+      wetTimer -= dt;
+      wetDripAccum += dt;
+      if(wetDripAccum > 0.16){
+        wetDripAccum = 0;
+        spawnDropletBurst();
+      }
+    }
+
+    // boar catch-up (paused briefly while dazed after plowing into hay, or
+    // during the pinecone-throw cutscene)
     if(boarDazedTimer > 0){
       boarDazedTimer -= dt;
       if(boarDazedTimer <= 0){ boarStarGroup.visible = false; }
@@ -1134,7 +1344,8 @@
       boarHopY = Math.sin(Math.PI*Math.min(1,jt)) * 0.5;
     }
 
-    boar.position.set(playerX*0.85, boarHopY, catchGap);
+    var boarSwimY = inWater ? -0.22 : 0;
+    boar.position.set(playerX*0.85, boarHopY + boarSwimY, catchGap);
     boar.position.x += Math.sin(runPhase*0.7)*0.15;
     boar.rotation.z = (boarDazedTimer > 0) ? Math.sin(runPhase*3)*0.14 : 0;
     if(boarStarGroup.visible){
@@ -1145,11 +1356,11 @@
     });
 
     // camera follow
-    camera.position.x += (playerX*0.55 - camera.position.x) * Math.min(1, dt*4);
+    camera.position.x += (playerX*0.55 - camera.position.x) * Math.min(1, wdt*4);
     camera.lookAt(camera.position.x*0.3, 1.1, -12);
 
     // zone tag
-    zoneTag.textContent = currentZone === ZONE.FOREST ? 'las' : 'pole';
+    zoneTag.textContent = activeZone === ZONE.FOREST ? 'las' : (activeZone === ZONE.FIELD ? 'pole' : 'rzeka');
 
     scoreVal.textContent = Math.floor(distance) + ' m';
 
