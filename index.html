@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Dzik goni harcerza — 3D</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+  :root{
+    --ink:#0d1810;
+    --accent:#e8963c;
+    --accent-dim:#b5711f;
+    --cream:#f2e9d8;
+    box-sizing:border-box;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    height:100%; margin:0; overflow:hidden;
+    background:var(--ink);
+    font-family:'Trebuchet MS','Segoe UI',sans-serif;
+    -webkit-user-select:none; user-select:none;
+    touch-action:none;
+  }
+  #wrap{ position:relative; width:100%; height:100%; }
+  #gameCanvas{ position:absolute; top:0; left:0; width:100%; height:100%; display:block; touch-action:none; }
+
+  .hud{
+    position:absolute;
+    top:calc(14px + env(safe-area-inset-top,0px));
+    left:0; right:0;
+    display:flex; justify-content:space-between;
+    padding:0 18px; pointer-events:none;
+    font-weight:700; color:var(--cream);
+    text-shadow:0 2px 6px rgba(0,0,0,.6);
+  }
+  .hud .label{ font-size:11px; opacity:.75; font-weight:600; }
+  .hud .val{ font-size:22px; }
+  .zoneTag{
+    position:absolute;
+    top:calc(64px + env(safe-area-inset-top,0px));
+    left:50%; transform:translateX(-50%);
+    color:var(--cream); font-size:12px; opacity:.7;
+    letter-spacing:1px; pointer-events:none;
+    background:rgba(0,0,0,.25);
+    padding:4px 12px; border-radius:999px;
+  }
+
+  .overlay{
+    position:absolute; inset:0;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    text-align:center;
+    padding:32px calc(28px + env(safe-area-inset-left,0px)) calc(32px + env(safe-area-inset-bottom,0px)) calc(28px + env(safe-area-inset-right,0px));
+    background:radial-gradient(ellipse at 50% 30%, rgba(35,58,31,.94), rgba(13,24,16,.98));
+    color:var(--cream); gap:14px; z-index:10;
+  }
+  .overlay h1{ font-size:clamp(26px,7.5vw,36px); margin:0 0 2px 0; color:var(--accent); line-height:1.15; }
+  .overlay p{ margin:0; font-size:14.5px; line-height:1.55; max-width:320px; opacity:.85; }
+  .badge{ font-size:12.5px; padding:6px 14px; border:1px solid var(--accent-dim); border-radius:999px; color:var(--accent); opacity:.9; }
+  .btn{
+    margin-top:8px; padding:14px 34px; font-size:17px; font-weight:700;
+    color:var(--ink); background:var(--accent); border:none; border-radius:12px;
+    box-shadow:0 6px 0 var(--accent-dim); cursor:pointer; letter-spacing:.3px;
+  }
+  .btn:active{ transform:translateY(4px); box-shadow:0 2px 0 var(--accent-dim); }
+  .btn.secondary{
+    background:transparent; color:var(--cream); box-shadow:none; border:1px solid rgba(242,233,216,.35);
+    margin-top:0; padding:10px 22px; font-size:14px;
+  }
+  .tiltIcon{ font-size:44px; }
+  .score-line{ display:flex; gap:18px; justify-content:center; flex-wrap:wrap; }
+  .score-line div{ display:flex; flex-direction:column; align-items:center; }
+  .score-line .n{ font-size:26px; font-weight:800; color:var(--accent); }
+  .score-line .l{ font-size:11px; opacity:.7; }
+  .countdown{ font-size:80px; font-weight:800; color:var(--accent); text-shadow:0 4px 20px rgba(0,0,0,.5); }
+  .hidden{ display:none !important; }
+  .modeNote{ font-size:11.5px; opacity:.55; margin-top:2px; }
+  .debugTag{
+    position:absolute;
+    bottom:calc(10px + env(safe-area-inset-bottom,0px));
+    left:0; right:0;
+    text-align:center;
+    color:var(--cream); opacity:.6; font-size:11px;
+    pointer-events:none; letter-spacing:.3px;
+  }
+  .toast{
+    position:absolute;
+    top:calc(100px + env(safe-area-inset-top,0px));
+    left:50%; transform:translateX(-50%);
+    background:rgba(0,0,0,.55);
+    color:var(--cream);
+    font-size:12.5px;
+    padding:8px 16px;
+    border-radius:10px;
+    z-index:20;
+    max-width:80%;
+    text-align:center;
+  }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="gameCanvas"></canvas>
+
+  <div class="hud hidden" id="hud">
+    <div><div class="label">dystans</div><div class="val" id="scoreVal">0 m</div></div>
+    <div style="text-align:right"><div class="label">rekord</div><div class="val" id="bestVal">0 m</div></div>
+  </div>
+  <div class="zoneTag hidden" id="zoneTag">las</div>
+  <div class="debugTag hidden" id="debugTag">tryb: —</div>
+
+  <div class="overlay" id="startScreen">
+    <div class="badge">🌲 leśna ucieczka · 3D</div>
+    <h1>Dzik goni harcerza!</h1>
+    <p>Biegniesz przed siebie przez las i pola, a dzik depcze ci po piętach. Przechylaj telefon w lewo i prawo, żeby wymijać przeszkody bokiem, a pochyl go do przodu (na plecy), żeby przeskoczyć te niskie, których nie da się obejść.</p>
+    <button class="btn" id="startBtn">Rozpocznij</button>
+    <div class="modeNote" id="supportNote"></div>
+    <div class="modeNote">Jeśli grasz z podglądu w aplikacji Claude, otwórz ten link wprost w przeglądarce telefonu (Chrome/Safari) — osadzony podgląd czasem blokuje czujnik przechyłu.</div>
+  </div>
+
+  <div class="overlay hidden" id="calibrateScreen">
+    <div class="tiltIcon">📱</div>
+    <h1>Ustaw pozycję zerową</h1>
+    <p>Potrzymaj telefon dokładnie tak, jak wygodnie ci grać — pionowo, lekko pochylony ku sobie. Gdy będziesz gotowy, stuknij ekran, żeby zapisać tę pozycję jako środek.</p>
+    <div class="modeNote" id="liveGammaNote">czujnik: czekam na odczyt…</div>
+    <button class="btn" id="calibrateBtn">Stuknij, aby skalibrować</button>
+  </div>
+
+  <div class="overlay hidden" id="countdownScreen">
+    <div class="countdown" id="countdownVal">3</div>
+    <p>Lewo/prawo — skręcasz. Pochyl telefon do przodu (na plecy) — skaczesz.</p>
+  </div>
+
+  <div class="overlay hidden" id="overScreen">
+    <div class="badge" id="caughtBadge">🐗 dzik cię dogonił</div>
+    <h1>Koniec zwiadu</h1>
+    <div class="score-line">
+      <div><div class="n" id="finalScore">0 m</div><div class="l">ten przebieg</div></div>
+      <div><div class="n" id="finalBest">0 m</div><div class="l">rekord</div></div>
+    </div>
+    <button class="btn" id="retryBtn">Uciekaj jeszcze raz</button>
+    <button class="btn secondary" id="recalibrateBtn">Skalibruj ponownie</button>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---------- DOM ----------
+  var canvas = document.getElementById('gameCanvas');
+  var hud = document.getElementById('hud');
+  var zoneTag = document.getElementById('zoneTag');
+  var scoreVal = document.getElementById('scoreVal');
+  var bestVal = document.getElementById('bestVal');
+  var startScreen = document.getElementById('startScreen');
+  var calibrateScreen = document.getElementById('calibrateScreen');
+  var countdownScreen = document.getElementById('countdownScreen');
+  var overScreen = document.getElementById('overScreen');
+  var startBtn = document.getElementById('startBtn');
+  var calibrateBtn = document.getElementById('calibrateBtn');
+  var retryBtn = document.getElementById('retryBtn');
+  var recalibrateBtn = document.getElementById('recalibrateBtn');
+  var finalScore = document.getElementById('finalScore');
+  var finalBest = document.getElementById('finalBest');
+  var countdownVal = document.getElementById('countdownVal');
+  var supportNote = document.getElementById('supportNote');
+  var debugTag = document.getElementById('debugTag');
+  var liveGammaNote = document.getElementById('liveGammaNote');
+
+  function showToast(msg, ms){
+    var el = document.createElement('div');
+    el.className = 'toast';
+    el.textContent = msg;
+    document.getElementById('wrap').appendChild(el);
+    setTimeout(function(){ el.remove(); }, ms || 3200);
+  }
+
+  var isSecureCtx = (window.isSecureContext !== false);
+  if(!isSecureCtx){
+    supportNote.textContent = 'Strona nie jest otwarta przez https — czujnik przechyłu może nie działać w tej przeglądarce. Jeśli sterowanie nie zadziała, gra przełączy się na sterowanie dotykiem.';
+  }
+
+  var BEST = 0;
+  try { BEST = parseInt(localStorage.getItem('dzik3d_best') || '0', 10) || 0; } catch(e){ BEST = 0; }
+  bestVal.textContent = BEST + ' m';
+
+  var hasOrientationAPI = (typeof window.DeviceOrientationEvent !== 'undefined');
+  if(!hasOrientationAPI){
+    supportNote.textContent = 'Żyroskop niedostępny na tym urządzeniu — użyjemy sterowania dotykiem.';
+  }
+
+  // ---------- THREE SETUP ----------
+  var renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias:true, alpha:false });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1, 2));
+  var scene = new THREE.Scene();
+  var SKY_COLOR = 0x1c3a2e;
+  scene.background = new THREE.Color(SKY_COLOR);
+  scene.fog = new THREE.Fog(SKY_COLOR, 28, 85);
+
+  var CAM_Z = 6.5, CAM_Y = 3.4;
+  var camera = new THREE.PerspectiveCamera(62, 1, 0.1, 200);
+  camera.position.set(0, CAM_Y, CAM_Z);
+  camera.lookAt(0, 1.2, -10);
+
+  var hemi = new THREE.HemisphereLight(0xdfeecf, 0x2a2013, 0.9);
+  scene.add(hemi);
+  var sun = new THREE.DirectionalLight(0xffe2ad, 0.95);
+  sun.position.set(6, 10, 4);
+  scene.add(sun);
+  var fill = new THREE.AmbientLight(0x304028, 0.35);
+  scene.add(fill);
+
+  function resize(){
+    var w = window.innerWidth, h = window.innerHeight;
+    renderer.setSize(w, h, false);
+    camera.aspect = w/h;
+    camera.updateProjectionMatrix();
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  // ---------- WORLD GROUP ----------
+  var world = new THREE.Group();
+  scene.add(world);
+  var worldZ = 0; // world.position.z, cached
+
+  var LANE_HALF = 2.9;
+  var PLAYER_HALF_W = 0.36;
+  var PLAYER_HALF_D = 0.32;
+  var CHUNK_LEN = 30;
+  var FAR_CLIP = -95;
+  var BACK_CLIP = CAM_Z + 6;
+
+  var chunks = [];      // ground chunks {mesh, centerLocalZ}
+  var obstacles = [];   // {mesh, halfW, localZ}
+  var decorations = []; // {mesh, localZ} purely visual
+  var frontierZ = -6;   // next chunk spawns starting here, decreasing
+
+  var ZONE = { FOREST:'forest', FIELD:'field' };
+  var currentZone = ZONE.FOREST;
+  var zoneRemaining = 40;
+
+  function zoneColor(zone){
+    return zone === ZONE.FOREST ? 0x24391f : 0xb08a34;
+  }
+  function pathColor(){ return 0x6b4a2c; }
+
+  function makeTree(x, z){
+    var g = new THREE.Group();
+    var trunkMat = new THREE.MeshLambertMaterial({ color:0x4a3320 });
+    var leafMat = new THREE.MeshLambertMaterial({ color:0x1f4a26 });
+    var trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.14,0.18,1.4,6), trunkMat);
+    trunk.position.y = 0.7;
+    var leaf = new THREE.Mesh(new THREE.ConeGeometry(1.1,2.3,7), leafMat);
+    leaf.position.y = 2.2;
+    g.add(trunk, leaf);
+    g.position.set(x, 0, z);
+    var s = 0.8 + Math.random()*0.6;
+    g.scale.set(s,s,s);
+    return g;
+  }
+
+  function makeHay(x, z){
+    var mat = new THREE.MeshLambertMaterial({ color:0xd9b25a });
+    var m = new THREE.Mesh(new THREE.CylinderGeometry(0.55,0.55,1.1,10), mat);
+    m.rotation.z = Math.PI/2;
+    m.position.set(x, 0.55, z);
+    return m;
+  }
+
+  function makeLogObstacle(){
+    var mat = new THREE.MeshLambertMaterial({ color:0x5a3d24 });
+    var m = new THREE.Mesh(new THREE.CylinderGeometry(0.38,0.38,1.7,8), mat);
+    m.rotation.z = Math.PI/2;
+    m.position.y = 0.38;
+    return { mesh:m, halfW:0.78, halfD:0.34, jumpable:false };
+  }
+  function makeRockObstacle(){
+    var mat = new THREE.MeshLambertMaterial({ color:0x63625b });
+    var m = new THREE.Mesh(new THREE.DodecahedronGeometry(0.55,0), mat);
+    m.position.y = 0.5;
+    m.rotation.y = Math.random()*Math.PI;
+    return { mesh:m, halfW:0.5, halfD:0.4 };
+  }
+  function makeHayBaleObstacle(){
+    var mat = new THREE.MeshLambertMaterial({ color:0xd9b25a });
+    var m = new THREE.Mesh(new THREE.CylinderGeometry(0.55,0.55,1.0,10), mat);
+    m.position.y = 0.55;
+    return { mesh:m, halfW:0.5, halfD:0.4 };
+  }
+  function makeFenceObstacle(){
+    var g = new THREE.Group();
+    var mat = new THREE.MeshLambertMaterial({ color:0x8a6a3f });
+    var rail = new THREE.Mesh(new THREE.BoxGeometry(2.0,0.14,0.14), mat);
+    rail.position.y = 0.7;
+    var rail2 = rail.clone(); rail2.position.y = 0.35;
+    var p1 = new THREE.Mesh(new THREE.BoxGeometry(0.14,0.9,0.14), mat); p1.position.set(-0.9,0.45,0);
+    var p2 = p1.clone(); p2.position.x = 0.9;
+    g.add(rail, rail2, p1, p2);
+    return { mesh:g, halfW:0.95, halfD:0.14 };
+  }
+
+  // Low hurdles: span the full lane, cannot be dodged sideways — must be jumped.
+  function makeLowLogHurdle(){
+    var mat = new THREE.MeshLambertMaterial({ color:0x6b4a2c });
+    var fullWidth = LANE_HALF*2 + 0.6;
+    var m = new THREE.Mesh(new THREE.CylinderGeometry(0.2,0.2, fullWidth, 8), mat);
+    m.rotation.z = Math.PI/2;
+    m.position.y = 0.2;
+    return { mesh:m, halfW:fullWidth/2, halfD:0.28, jumpable:true, clearHeight:0.48 };
+  }
+  function makeLowRailHurdle(){
+    var mat = new THREE.MeshLambertMaterial({ color:0x8a6a3f });
+    var fullWidth = LANE_HALF*2 + 0.6;
+    var m = new THREE.Mesh(new THREE.BoxGeometry(fullWidth, 0.28, 0.16), mat);
+    m.position.y = 0.14;
+    return { mesh:m, halfW:fullWidth/2, halfD:0.22, jumpable:true, clearHeight:0.4 };
+  }
+
+  function spawnChunk(){
+    var zone = currentZone;
+    var centerZ = frontierZ - CHUNK_LEN/2;
+    var groundMat = new THREE.MeshLambertMaterial({ color: zoneColor(zone) });
+    var ground = new THREE.Mesh(new THREE.PlaneGeometry(16, CHUNK_LEN), groundMat);
+    ground.rotation.x = -Math.PI/2;
+    ground.position.set(0, 0, centerZ);
+    world.add(ground);
+    chunks.push({ mesh:ground, centerLocalZ: centerZ });
+
+    var pathMat = new THREE.MeshLambertMaterial({ color: pathColor() });
+    var path = new THREE.Mesh(new THREE.PlaneGeometry(LANE_HALF*2+0.6, CHUNK_LEN), pathMat);
+    path.rotation.x = -Math.PI/2;
+    path.position.set(0, 0.01, centerZ);
+    world.add(path);
+    chunks.push({ mesh:path, centerLocalZ: centerZ });
+
+    // decorations along the sides
+    var decoCount = 5;
+    for(var i=0;i<decoCount;i++){
+      var dz = centerZ + (Math.random()-0.5)*CHUNK_LEN;
+      var side = Math.random()<0.5 ? -1 : 1;
+      var dx = side*(LANE_HALF + 1.0 + Math.random()*3.5);
+      var mesh;
+      if(zone === ZONE.FOREST){ mesh = makeTree(dx, 0); }
+      else { mesh = makeHay(dx, 0); }
+      mesh.position.z = dz;
+      world.add(mesh);
+      decorations.push({ mesh:mesh, localZ: dz });
+    }
+
+    // obstacles: 0-2 per chunk, skip a safe intro chunk
+    var obstacleCount = (chunks.length <= 2) ? 0 : (1 + (Math.random()<0.55 ? 1 : 0));
+    var usedZ = [];
+    for(var j=0;j<obstacleCount;j++){
+      var oz = centerZ + (Math.random()-0.5)*(CHUNK_LEN-6);
+      var picked;
+      var wantHurdle = Math.random() < 0.4;
+      if(wantHurdle){
+        picked = (zone === ZONE.FOREST) ? makeLowLogHurdle() : makeLowRailHurdle();
+        picked.mesh.position.x = 0;
+      } else {
+        var ox = (Math.random()*2-1) * (LANE_HALF-0.6);
+        if(zone === ZONE.FOREST){
+          picked = Math.random()<0.5 ? makeLogObstacle() : makeRockObstacle();
+        } else {
+          picked = Math.random()<0.5 ? makeHayBaleObstacle() : makeFenceObstacle();
+        }
+        picked.mesh.position.x = ox;
+      }
+      picked.mesh.position.z = oz;
+      world.add(picked.mesh);
+      obstacles.push({
+        mesh:picked.mesh,
+        halfW:picked.halfW,
+        halfD:picked.halfD,
+        jumpable: !!picked.jumpable,
+        clearHeight: picked.clearHeight || 0,
+        localZ: oz
+      });
+    }
+
+    frontierZ -= CHUNK_LEN;
+
+    zoneRemaining -= CHUNK_LEN;
+    if(zoneRemaining <= 0){
+      currentZone = (Math.random()<0.65) ? (currentZone===ZONE.FOREST?ZONE.FIELD:ZONE.FOREST) : currentZone;
+      zoneRemaining = 40 + Math.random()*35;
+    }
+  }
+
+  function clearWorld(){
+    chunks.forEach(function(c){ world.remove(c.mesh); });
+    obstacles.forEach(function(o){ world.remove(o.mesh); });
+    decorations.forEach(function(d){ world.remove(d.mesh); });
+    chunks = []; obstacles = []; decorations = [];
+    frontierZ = -6;
+    currentZone = Math.random()<0.5?ZONE.FOREST:ZONE.FIELD;
+    zoneRemaining = 40;
+    world.position.z = 0;
+    worldZ = 0;
+    while(frontierZ + worldZ > FAR_CLIP){ spawnChunk(); }
+  }
+
+  // ---------- PLAYER MODEL ----------
+  var player = new THREE.Group();
+  var pLegL, pLegR, pArmL, pArmR, pHip;
+  (function buildPlayer(){
+    var shirt = new THREE.MeshLambertMaterial({ color:0x5b7247 });
+    var skin = new THREE.MeshLambertMaterial({ color:0xe8b98a });
+    var scarf = new THREE.MeshLambertMaterial({ color:0xc1443c });
+    var hat = new THREE.MeshLambertMaterial({ color:0x8a7355 });
+    var short = new THREE.MeshLambertMaterial({ color:0x3f3a2e });
+
+    pHip = new THREE.Group(); pHip.position.y = 0.62;
+    player.add(pHip);
+
+    var torso = new THREE.Mesh(new THREE.BoxGeometry(0.5,0.55,0.3), shirt);
+    torso.position.y = 0.34;
+    pHip.add(torso);
+
+    var scarfMesh = new THREE.Mesh(new THREE.ConeGeometry(0.32,0.34,4), scarf);
+    scarfMesh.position.set(0,0.56,0.03);
+    scarfMesh.rotation.y = Math.PI/4;
+    pHip.add(scarfMesh);
+
+    var head = new THREE.Mesh(new THREE.SphereGeometry(0.22,10,8), skin);
+    head.position.y = 0.78;
+    pHip.add(head);
+
+    var hatMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.24,0.26,0.14,10), hat);
+    hatMesh.position.y = 0.92;
+    pHip.add(hatMesh);
+
+    function makeLimb(mat, w,h,d){
+      var m = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), mat);
+      var pivot = new THREE.Group();
+      m.position.y = -h/2;
+      pivot.add(m);
+      return pivot;
+    }
+    pLegL = makeLimb(short, 0.16,0.5,0.18); pLegL.position.set(-0.13,0.06,0);
+    pLegR = makeLimb(short, 0.16,0.5,0.18); pLegR.position.set(0.13,0.06,0);
+    pArmL = makeLimb(shirt, 0.13,0.42,0.15); pArmL.position.set(-0.32,0.55,0);
+    pArmR = makeLimb(shirt, 0.13,0.42,0.15); pArmR.position.set(0.32,0.55,0);
+    pHip.add(pLegL, pLegR, pArmL, pArmR);
+  })();
+  player.position.set(0, 0, 0);
+  scene.add(player);
+
+  // ---------- BOAR MODEL ----------
+  var boar = new THREE.Group();
+  var boarLegs = [];
+  (function buildBoar(){
+    var body = new THREE.MeshLambertMaterial({ color:0x4a3728 });
+    var dark = new THREE.MeshLambertMaterial({ color:0x2a1c12 });
+    var tusk = new THREE.MeshLambertMaterial({ color:0xeee6d6 });
+
+    var torso = new THREE.Mesh(new THREE.BoxGeometry(0.62,0.42,0.9), body);
+    torso.position.y = 0.42;
+    boar.add(torso);
+
+    var head = new THREE.Mesh(new THREE.BoxGeometry(0.4,0.34,0.42), body);
+    head.position.set(0,0.4,0.62);
+    boar.add(head);
+
+    var snout = new THREE.Mesh(new THREE.BoxGeometry(0.22,0.16,0.18), dark);
+    snout.position.set(0,0.3,0.85);
+    boar.add(snout);
+
+    for(var i=0;i<2;i++){
+      var t = new THREE.Mesh(new THREE.ConeGeometry(0.04,0.18,5), tusk);
+      t.position.set(i===0?-0.1:0.1, 0.22, 0.92);
+      t.rotation.x = Math.PI*0.42;
+      boar.add(t);
+    }
+
+    var legPositions = [[-0.22,0.66],[0.22,0.66],[-0.22,-0.28],[0.22,-0.28]];
+    legPositions.forEach(function(p){
+      var leg = new THREE.Mesh(new THREE.CylinderGeometry(0.07,0.07,0.4,6), dark);
+      leg.position.set(p[0],0.2,p[1]);
+      boar.add(leg);
+      boarLegs.push(leg);
+    });
+
+    var mane = new THREE.Mesh(new THREE.ConeGeometry(0.16,0.3,5), dark);
+    mane.position.set(0,0.66,0.2);
+    mane.rotation.x = -0.3;
+    boar.add(mane);
+  })();
+  boar.rotation.y = Math.PI; // face the same forward direction as the scout
+  scene.add(boar);
+
+  // ---------- INPUT / TILT CALIBRATION ----------
+  var controlMode = 'tilt'; // 'tilt' | 'touch'
+  var baselineGamma = 0;
+  var currentGamma = 0;
+  var baselineBeta = 0;
+  var currentBeta = 0;
+  var orientationSeen = false;
+  var orientationEventCount = 0;
+  var lastOrientationAt = 0;
+  var MAX_TILT_DEG = 20;
+  var JUMP_TILT_THRESHOLD = 22; // degrees of forward pitch (toward lying on its back) that trigger a jump
+  var jumpArmed = true;
+
+  function onOrientation(e){
+    if(e.gamma === null || e.gamma === undefined) return;
+    orientationSeen = true;
+    orientationEventCount++;
+    lastOrientationAt = performance.now();
+    // Compensate for landscape orientation: on most Android/iOS browsers,
+    // beta/gamma swap meaning when the device is rotated to landscape.
+    var angle = (screen.orientation && typeof screen.orientation.angle === 'number')
+      ? screen.orientation.angle
+      : (window.orientation || 0);
+    if(angle === 90){
+      currentGamma = -e.beta;
+      currentBeta = e.gamma;
+    } else if(angle === -90 || angle === 270){
+      currentGamma = e.beta;
+      currentBeta = -e.gamma;
+    } else {
+      currentGamma = e.gamma;
+      currentBeta = e.beta;
+    }
+  }
+
+  var touchTargetX = null;
+  var touchStartX = 0, touchStartTime = 0, touchMoved = false;
+  function onPointerDown(e){
+    if(controlMode !== 'touch') return;
+    var cx = e.clientX !== undefined ? e.clientX : (e.touches?e.touches[0].clientX:0);
+    touchTargetX = xFromClientX(cx);
+    touchStartX = cx;
+    touchStartTime = performance.now();
+    touchMoved = false;
+  }
+  function onPointerMove(e){
+    if(controlMode !== 'touch') return;
+    if(e.buttons === 0 && e.pointerType === 'mouse') return;
+    var cx = e.clientX !== undefined ? e.clientX : (e.touches?e.touches[0].clientX:null);
+    if(cx===null) return;
+    if(Math.abs(cx-touchStartX) > 12) touchMoved = true;
+    touchTargetX = xFromClientX(cx);
+  }
+  function onPointerUp(){
+    if(controlMode !== 'touch') return;
+    var heldFor = performance.now() - touchStartTime;
+    if(!touchMoved && heldFor < 300){ tryJump(); }
+  }
+  function xFromClientX(clientX){
+    var frac = (clientX / window.innerWidth)*2 - 1; // -1..1
+    return frac * (LANE_HALF - PLAYER_HALF_W);
+  }
+  canvas.addEventListener('pointerdown', onPointerDown);
+  canvas.addEventListener('pointermove', onPointerMove);
+  canvas.addEventListener('pointerup', onPointerUp);
+  canvas.addEventListener('touchstart', function(e){ onPointerDown({clientX:e.touches[0].clientX}); }, {passive:true});
+  canvas.addEventListener('touchmove', function(e){ onPointerMove({clientX:e.touches[0].clientX}); }, {passive:true});
+  canvas.addEventListener('touchend', function(){ onPointerUp(); }, {passive:true});
+
+  function enableOrientationListener(){
+    window.addEventListener('deviceorientation', onOrientation, true);
+  }
+
+  function requestOrientationPermission(cb){
+    if(typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function'){
+      DeviceOrientationEvent.requestPermission().then(function(state){
+        cb(state === 'granted');
+      }).catch(function(){ cb(false); });
+    } else if(hasOrientationAPI){
+      cb(true);
+    } else {
+      cb(false);
+    }
+  }
+
+  // ---------- GAME STATE ----------
+  var state = 'idle'; // idle, calibrating, countdown, playing, over
+  var playerX = 0, playerTargetX = 0;
+  var speed = 5.5, baseSpeed = 5.5;
+  var distance = 0;
+  var catchGap = 3.2;
+  var runPhase = 0;
+  var clock = new THREE.Clock();
+
+  var playerY = 0, playerVY = 0, onGround = true;
+  var JUMP_VELOCITY = 5.6;
+  var GRAVITY = -15.5;
+
+  function tryJump(){
+    if(state === 'playing' && onGround){
+      playerVY = JUMP_VELOCITY;
+      onGround = false;
+    }
+  }
+
+  function resetRun(){
+    clearWorld();
+    playerX = 0; playerTargetX = 0;
+    speed = baseSpeed;
+    distance = 0;
+    catchGap = 3.2;
+    runPhase = 0;
+    playerY = 0; playerVY = 0; onGround = true;
+    jumpArmed = true;
+    player.position.set(0,0,0);
+  }
+
+  startBtn.addEventListener('click', function(){
+    requestOrientationPermission(function(granted){
+      if(granted){
+        controlMode = 'tilt';
+        orientationSeen = false;
+        enableOrientationListener();
+      } else {
+        controlMode = 'touch';
+      }
+      startScreen.classList.add('hidden');
+      if(controlMode === 'tilt'){
+        calibrateScreen.classList.remove('hidden');
+      } else {
+        beginCountdown();
+      }
+    });
+  });
+
+  calibrateBtn.addEventListener('click', function(){
+    baselineGamma = currentGamma;
+    baselineBeta = currentBeta;
+    jumpArmed = true;
+    calibrateScreen.classList.add('hidden');
+    setTimeout(function(){
+      if(!orientationSeen){
+        controlMode = 'touch';
+      }
+      beginCountdown();
+    }, 250);
+  });
+
+  recalibrateBtn.addEventListener('click', function(){
+    overScreen.classList.add('hidden');
+    if(controlMode === 'tilt'){
+      calibrateScreen.classList.remove('hidden');
+    } else {
+      beginCountdown();
+    }
+  });
+
+  retryBtn.addEventListener('click', function(){
+    overScreen.classList.add('hidden');
+    beginCountdown();
+  });
+
+  function beginCountdown(){
+    resetRun();
+    state = 'countdown';
+    countdownScreen.classList.remove('hidden');
+    var n = 3;
+    countdownVal.textContent = n;
+    var iv = setInterval(function(){
+      n -= 1;
+      if(n <= 0){
+        clearInterval(iv);
+        countdownScreen.classList.add('hidden');
+        hud.classList.remove('hidden');
+        zoneTag.classList.remove('hidden');
+        debugTag.classList.remove('hidden');
+        state = 'playing';
+        clock.getDelta();
+        if(controlMode === 'tilt'){
+          orientationEventCount = 0;
+          setTimeout(function(){
+            if(state === 'playing' && controlMode === 'tilt' && orientationEventCount === 0){
+              controlMode = 'touch';
+              showToast('Czujnik przechyłu nie odpowiada — przełączono na sterowanie dotykiem (przesuwaj palcem po ekranie).');
+            }
+          }, 1500);
+        }
+      } else {
+        countdownVal.textContent = n;
+      }
+    }, 700);
+  }
+
+  function endRun(){
+    state = 'over';
+    hud.classList.add('hidden');
+    zoneTag.classList.add('hidden');
+    debugTag.classList.add('hidden');
+    var meters = Math.floor(distance);
+    if(meters > BEST){
+      BEST = meters;
+      try{ localStorage.setItem('dzik3d_best', String(BEST)); }catch(e){}
+    }
+    finalScore.textContent = meters + ' m';
+    finalBest.textContent = BEST + ' m';
+    bestVal.textContent = BEST + ' m';
+    setTimeout(function(){ overScreen.classList.remove('hidden'); }, 300);
+  }
+
+  function update(dt){
+    dt = Math.min(dt, 0.05);
+    distance += speed*dt;
+    speed = baseSpeed + Math.min(distance*0.012, 4.5);
+
+    // steering
+    if(controlMode === 'tilt'){
+      var delta = currentGamma - baselineGamma;
+      delta = Math.max(-MAX_TILT_DEG, Math.min(MAX_TILT_DEG, delta));
+      playerTargetX = (delta/MAX_TILT_DEG) * (LANE_HALF - PLAYER_HALF_W);
+    } else if(touchTargetX !== null){
+      playerTargetX = touchTargetX;
+    }
+    playerX += (playerTargetX - playerX) * Math.min(1, dt*6);
+    playerX = Math.max(-LANE_HALF+0.1, Math.min(LANE_HALF-0.1, playerX));
+    player.position.x = playerX;
+    player.rotation.z = (playerTargetX - playerX) * -0.15;
+    player.rotation.y = Math.PI + (playerTargetX-playerX)*0.25;
+
+    // jump trigger: pitching the phone forward (toward lying on its back)
+    if(controlMode === 'tilt'){
+      var forwardTilt = baselineBeta - currentBeta;
+      if(forwardTilt > JUMP_TILT_THRESHOLD && jumpArmed){
+        tryJump();
+        jumpArmed = false;
+      } else if(forwardTilt < JUMP_TILT_THRESHOLD*0.45){
+        jumpArmed = true;
+      }
+    }
+
+    // vertical physics (jump / gravity)
+    playerVY += GRAVITY*dt;
+    playerY += playerVY*dt;
+    if(playerY <= 0){
+      playerY = 0; playerVY = 0; onGround = true;
+    }
+
+    runPhase += dt*10;
+    if(onGround){
+      var swing = Math.sin(runPhase)*0.6;
+      pLegL.rotation.x = swing;
+      pLegR.rotation.x = -swing;
+      pArmL.rotation.x = -swing*0.8;
+      pArmR.rotation.x = swing*0.8;
+      player.position.y = playerY + Math.abs(Math.sin(runPhase))*0.06;
+    } else {
+      pLegL.rotation.x = -0.5;
+      pLegR.rotation.x = 0.6;
+      pArmL.rotation.x = 0.4;
+      pArmR.rotation.x = -0.4;
+      player.position.y = playerY;
+    }
+
+    // world scroll
+    worldZ += speed*dt;
+    world.position.z = worldZ;
+
+    // spawn / recycle chunks
+    while(frontierZ + worldZ > FAR_CLIP){ spawnChunk(); }
+    for(var i=chunks.length-1;i>=0;i--){
+      var c = chunks[i];
+      if(c.centerLocalZ + worldZ - (CHUNK_LEN/2) > BACK_CLIP){
+        world.remove(c.mesh);
+        chunks.splice(i,1);
+      }
+    }
+    for(i=decorations.length-1;i>=0;i--){
+      var d = decorations[i];
+      if(d.localZ + worldZ > BACK_CLIP){
+        world.remove(d.mesh);
+        decorations.splice(i,1);
+      }
+    }
+
+    // obstacles: move/recycle + collide
+    for(i=obstacles.length-1;i>=0;i--){
+      var o = obstacles[i];
+      var visZ = o.localZ + worldZ;
+      if(visZ > BACK_CLIP){
+        world.remove(o.mesh);
+        obstacles.splice(i,1);
+        continue;
+      }
+      var oHalfD = (o.halfD !== undefined) ? o.halfD : 0.4;
+      if(Math.abs(visZ) < (PLAYER_HALF_D + oHalfD)){
+        if(o.jumpable){
+          if(playerY < o.clearHeight){
+            endRun();
+            return;
+          }
+        } else if(Math.abs(playerX - o.mesh.position.x) < (PLAYER_HALF_W + o.halfW)){
+          endRun();
+          return;
+        }
+      }
+    }
+
+    // boar catch-up
+    catchGap -= dt*0.045;
+    catchGap = Math.max(catchGap, -0.2);
+    if(catchGap <= 0.35){
+      endRun();
+      return;
+    }
+    boar.position.set(playerX*0.85, 0, catchGap);
+    boar.position.x += Math.sin(runPhase*0.7)*0.15;
+    boarLegs.forEach(function(leg, idx){
+      leg.rotation.x = Math.sin(runPhase*1.4 + idx*Math.PI/2)*0.5;
+    });
+
+    // camera follow
+    camera.position.x += (playerX*0.55 - camera.position.x) * Math.min(1, dt*4);
+    camera.lookAt(camera.position.x*0.3, 1.1, -12);
+
+    // zone tag
+    zoneTag.textContent = currentZone === ZONE.FOREST ? 'las' : 'pole';
+
+    scoreVal.textContent = Math.floor(distance) + ' m';
+
+    if(controlMode === 'tilt'){
+      debugTag.textContent = 'skręt: ' + (currentGamma - baselineGamma).toFixed(1) + '°  |  skok: ' + (baselineBeta - currentBeta).toFixed(1) + '°' + (onGround ? '' : ' (w locie)');
+    } else {
+      debugTag.textContent = 'sterowanie dotykiem — przeciągnij: skręt, stuknij: skok';
+    }
+  }
+
+  function animate(){
+    requestAnimationFrame(animate);
+    var dt = clock.getDelta();
+
+    if(!calibrateScreen.classList.contains('hidden')){
+      if(orientationEventCount > 0){
+        liveGammaNote.textContent = 'czujnik działa — surowy odczyt: ' + currentGamma.toFixed(1) + '° (przechyl telefon i patrz, czy się zmienia)';
+      } else {
+        liveGammaNote.textContent = 'czujnik: brak odczytu — spróbuj przechylić telefon teraz';
+      }
+    }
+
+    if(state === 'playing'){
+      update(dt);
+    } else {
+      runPhase += dt*4;
+      pLegL.rotation.x = Math.sin(runPhase)*0.3;
+      pLegR.rotation.x = -Math.sin(runPhase)*0.3;
+    }
+    renderer.render(scene, camera);
+  }
+
+  clearWorld();
+  animate();
+
+})();
+</script>
+</body>
+</html>
