@@ -286,6 +286,21 @@
   // the player right now (currentZone itself tracks the *frontier* zone,
   // several chunks ahead of where the player is standing)
   var zoneMarkers = [];
+  var lastChunkZone = null; // zone of the previously spawned chunk, for blending at the seam
+
+  function lerpColor(hexA, hexB, t){
+    var ca = new THREE.Color(hexA);
+    var cb = new THREE.Color(hexB);
+    return ca.lerp(cb, t).getHex();
+  }
+  // color for the transition chunk at a zone boundary — a sandy bank where
+  // either side is the river, otherwise a straight blend of the two zones
+  function blendZoneColor(fromZone, toZone){
+    if(fromZone === ZONE.RIVER || toZone === ZONE.RIVER){
+      return 0xc2a870;
+    }
+    return lerpColor(zoneColor(fromZone), zoneColor(toZone), 0.5);
+  }
 
   function zoneColor(zone){
     if(zone === ZONE.FOREST) return 0x24391f;
@@ -293,8 +308,9 @@
     return 0x2d6ea3; // river water
   }
   function pathColor(zone){
-    if(zone === ZONE.RIVER) return 0x3d8bc4; // lighter central current
-    return 0x6b4a2c;
+    if(zone === ZONE.RIVER) return zoneColor(zone); // river spans the full width, no separate lane
+    if(zone === ZONE.FOREST) return 0x3a4a28; // muted, closer to the forest floor tone
+    return 0x9c7a3a; // muted, closer to the field tone
   }
   function getActiveZoneMarker(){
     for(var zi=0; zi<zoneMarkers.length; zi++){
@@ -443,19 +459,28 @@
     var zone = currentZone;
     var centerZ = frontierZ - CHUNK_LEN/2;
     zoneMarkers.push({ z: centerZ, zone: zone });
-    var groundMat = new THREE.MeshLambertMaterial({ color: zoneColor(zone) });
+
+    // the first chunk of a new zone blends toward it instead of cutting
+    // straight to the new color — a sandy bank where a river is involved,
+    // a plain blend between forest and field otherwise
+    var isTransition = (lastChunkZone !== null && lastChunkZone !== zone);
+    var groundColorHex = isTransition ? blendZoneColor(lastChunkZone, zone) : zoneColor(zone);
+    var pathColorHex = isTransition ? groundColorHex : pathColor(zone);
+
+    var groundMat = new THREE.MeshLambertMaterial({ color: groundColorHex });
     var ground = new THREE.Mesh(new THREE.PlaneGeometry(16, CHUNK_LEN), groundMat);
     ground.rotation.x = -Math.PI/2;
     ground.position.set(0, 0, centerZ);
     world.add(ground);
     chunks.push({ mesh:ground, centerLocalZ: centerZ });
 
-    var pathMat = new THREE.MeshLambertMaterial({ color: pathColor(zone) });
+    var pathMat = new THREE.MeshLambertMaterial({ color: pathColorHex });
     var path = new THREE.Mesh(new THREE.PlaneGeometry(LANE_HALF*2+0.6, CHUNK_LEN), pathMat);
     path.rotation.x = -Math.PI/2;
     path.position.set(0, 0.01, centerZ);
     world.add(path);
     chunks.push({ mesh:path, centerLocalZ: centerZ });
+    lastChunkZone = zone;
 
     // decorations along the sides
     var decoCount = 5;
@@ -577,6 +602,7 @@
     frontierZ = -6;
     currentZone = Math.random()<0.5?ZONE.FOREST:ZONE.FIELD;
     zoneRemaining = 40;
+    lastChunkZone = null;
     world.position.z = 0;
     worldZ = 0;
     lastObstacleZ = 1e9;
@@ -626,17 +652,32 @@
     scarfKnot.position.set(0, 0.6, -0.21);
     pHip.add(scarfKnot);
 
-    var scarfBody = new THREE.Mesh(new THREE.BoxGeometry(0.24,0.32,0.03), scarf);
-    scarfBody.position.set(0, 0.46, -0.2);
+    // triangular neckerchief, apex hanging down, two black stripes
+    // converging toward the tip along its edges
+    var scarfW = 0.14, scarfH = 0.34;
+    var scarfShape = new THREE.Shape();
+    scarfShape.moveTo(-scarfW, scarfH);
+    scarfShape.lineTo(scarfW, scarfH);
+    scarfShape.lineTo(0, 0);
+    scarfShape.lineTo(-scarfW, scarfH);
+    var scarfGeo = new THREE.ShapeGeometry(scarfShape);
+    var scarfBodyMat = new THREE.MeshLambertMaterial({ color:0x35606a, side: THREE.DoubleSide });
+    var scarfBody = new THREE.Mesh(scarfGeo, scarfBodyMat);
+    scarfBody.position.set(0, 0.28, -0.2);
     pHip.add(scarfBody);
 
-    var scarfStripe1 = new THREE.Mesh(new THREE.BoxGeometry(0.24,0.045,0.02), scarfStripe);
-    scarfStripe1.position.set(0, 0.52, -0.212);
-    scarfStripe1.rotation.z = 0.28;
+    var scarfStripeMat = new THREE.MeshLambertMaterial({ color:0x111111, side: THREE.DoubleSide });
+    var edgeDX = 0 - (-scarfW), edgeDY = 0 - scarfH;
+    var edgeLen = Math.sqrt(edgeDX*edgeDX + edgeDY*edgeDY);
+    var edgeAngle = Math.atan2(-edgeDX, edgeDY);
+    var scarfStripe1 = new THREE.Mesh(new THREE.BoxGeometry(0.03, edgeLen*0.82, 0.015), scarfStripeMat);
+    scarfStripe1.position.set(-scarfW/2, 0.28 + scarfH/2, -0.212);
+    scarfStripe1.rotation.z = edgeAngle;
     pHip.add(scarfStripe1);
 
-    var scarfStripe2 = scarfStripe1.clone();
-    scarfStripe2.position.y = 0.40;
+    var scarfStripe2 = new THREE.Mesh(new THREE.BoxGeometry(0.03, edgeLen*0.82, 0.015), scarfStripeMat);
+    scarfStripe2.position.set(scarfW/2, 0.28 + scarfH/2, -0.212);
+    scarfStripe2.rotation.z = -edgeAngle;
     pHip.add(scarfStripe2);
 
     var head = new THREE.Mesh(new THREE.SphereGeometry(0.22,10,8), skin);
@@ -691,6 +732,15 @@
   })();
   player.position.set(0, 0, 0);
   scene.add(player);
+
+  // contact shadow — shrinks/fades with height so it's easy to tell whether
+  // he's grounded or airborne (and reads against the ground how close an
+  // upcoming obstacle is)
+  var shadowMat = new THREE.MeshBasicMaterial({ color:0x000000, transparent:true, opacity:0.32 });
+  var playerShadow = new THREE.Mesh(new THREE.CircleGeometry(0.34, 16), shadowMat);
+  playerShadow.rotation.x = -Math.PI/2;
+  playerShadow.position.set(0, 0.02, 0);
+  scene.add(playerShadow);
 
   // ---------- BOAR MODEL ----------
   var boar = new THREE.Group();
@@ -917,9 +967,21 @@
   var distance = 0;
   var BASE_CATCH_GAP = 4.3; // scout-to-boar resting distance — a bigger head start
   var MAX_CATCH_GAP = 5.2;
+  var CATCH_THRESHOLD = 0.35;
   var catchGap = BASE_CATCH_GAP;
   var runPhase = 0;
   var clock = new THREE.Clock();
+
+  // the camera can't keep the boar in frame all the way out to MAX_CATCH_GAP,
+  // so his RENDERED distance is a compressed view of the real (gameplay)
+  // catchGap — farther away still reads as farther, just capped so he never
+  // scrolls out of shot
+  var BOAR_VISUAL_MAX = 2.6;
+  function visualCatchGap(gap){
+    var t = (gap - CATCH_THRESHOLD) / (MAX_CATCH_GAP - CATCH_THRESHOLD);
+    t = Math.max(0, Math.min(1, t));
+    return CATCH_THRESHOLD + t * (BOAR_VISUAL_MAX - CATCH_THRESHOLD);
+  }
 
   var playerY = 0, playerVY = 0, onGround = true;
   var JUMP_VELOCITY = 5.8;
@@ -1240,6 +1302,18 @@
       }
     }
 
+    // ground contact shadow — hidden while swimming, otherwise shrinks and
+    // fades the higher off the ground he is
+    if(inWater){
+      playerShadow.visible = false;
+    } else {
+      playerShadow.visible = true;
+      var shadowT = Math.max(0, 1 - playerY/1.6);
+      playerShadow.scale.set(0.5 + 0.5*shadowT, 0.5 + 0.5*shadowT, 1);
+      shadowMat.opacity = 0.14 + 0.26*shadowT;
+      playerShadow.position.x = playerX;
+    }
+
     // world scroll
     worldZ += speed*wdt;
     world.position.z = worldZ;
@@ -1369,7 +1443,7 @@
       catchGap -= dt*0.045;
     }
     catchGap = Math.max(catchGap, -0.2);
-    if(catchGap <= 0.35){
+    if(catchGap <= CATCH_THRESHOLD){
       triggerCaught();
       return;
     }
@@ -1394,7 +1468,7 @@
     }
 
     var boarSwimY = inWater ? -0.22 : 0;
-    boar.position.set(playerX*0.85, boarHopY + boarSwimY, catchGap);
+    boar.position.set(playerX*0.85, boarHopY + boarSwimY, visualCatchGap(catchGap));
     boar.position.x += Math.sin(runPhase*0.7)*0.15;
     boar.rotation.z = (boarDazedTimer > 0) ? Math.sin(runPhase*3)*0.14 : 0;
     if(boarStarGroup.visible){
@@ -1426,8 +1500,9 @@
     var t = 1 - Math.max(0, caughtTimer) / CAUGHT_DURATION; // 0 -> 1
     var lunge = Math.min(1, t*1.4); // reaches 1 slightly before the sequence ends
 
-    // boar lunges the rest of the way to the player, low and fast
-    var gap = caughtGapStart * (1 - lunge);
+    // boar lunges the rest of the way to the player, low and fast — starts
+    // from a visually-capped distance so the lunge is never off-screen
+    var gap = Math.min(caughtGapStart, BOAR_VISUAL_MAX) * (1 - lunge);
     boar.position.set(playerX*0.85 + Math.sin(runPhase*0.7)*0.15*(1-lunge), 0, gap);
     boar.rotation.z = 0;
     boarLegs.forEach(function(leg, idx){
