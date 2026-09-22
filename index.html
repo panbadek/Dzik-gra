@@ -359,12 +359,29 @@
     return g;
   }
 
-  function makeLogObstacle(){
-    var mat = new THREE.MeshLambertMaterial({ color:0x5a3d24 });
-    var m = new THREE.Mesh(new THREE.CylinderGeometry(0.38,0.38,1.7,8), mat);
-    m.rotation.z = Math.PI/2;
-    m.position.y = 0.38;
-    return { mesh:m, halfW:0.78, halfD:0.34, jumpable:false };
+  // a log stood upright on its end — unmistakably not something to hop over
+  function makeVerticalLogObstacle(){
+    var mat = new THREE.MeshLambertMaterial({ color:0x5a3c22 });
+    var m = new THREE.Mesh(new THREE.CylinderGeometry(0.26,0.3,1.0,8), mat);
+    m.position.y = 0.5;
+    return { mesh:m, halfW:0.3, halfD:0.3, jumpable:false, canDazeBoar:true };
+  }
+  // three logs stacked in a pile (2 on the bottom, 1 nested on top) —
+  // also unmistakably a dodge-only obstacle
+  function makeLogPileObstacle(){
+    var mat = new THREE.MeshLambertMaterial({ color:0x5a3c22 });
+    var g = new THREE.Group();
+    var logR = 0.24, logLen = 0.85;
+    function oneLog(x,y){
+      var m = new THREE.Mesh(new THREE.CylinderGeometry(logR,logR,logLen,8), mat);
+      m.rotation.z = Math.PI/2;
+      m.position.set(x, y, 0);
+      return m;
+    }
+    g.add(oneLog(-logR*0.95, logR));
+    g.add(oneLog(logR*0.95, logR));
+    g.add(oneLog(0, logR*2.75));
+    return { mesh:g, halfW:logLen/2, halfD:0.32, jumpable:false, canDazeBoar:true };
   }
   // a tree fallen across only half the path — the other half stays clear,
   // but it's too wide (and lying flat and heavy) to jump, so it must be dodged
@@ -434,26 +451,40 @@
     return g;
   }
 
-  // Low hurdles: span the full lane, cannot be dodged sideways — must be
-  // jumped. Styled as a fallen log/trunk in both zones (just sun-bleached
-  // lighter out in the field) rather than a fence rail.
-  function makeLogHurdle(barkColor){
+  // Low hurdles: always lie horizontally across the road, and can be
+  // jumped. Full-width ones can't be dodged sideways at all; partial-width
+  // ones (half / third / two-thirds of the road) leave the rest of the
+  // road open, so they can also be dodged around instead of jumped.
+  function makeLogHurdleMesh(barkColor, width){
     var mat = new THREE.MeshLambertMaterial({ color: barkColor });
-    var fullWidth = LANE_HALF*2 + 0.6;
-    var m = new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.22, fullWidth, 8), mat);
+    var m = new THREE.Mesh(new THREE.CylinderGeometry(0.22,0.22, width, 8), mat);
     m.rotation.z = Math.PI/2;
     m.position.y = 0.22;
-    var branchMat = new THREE.MeshLambertMaterial({ color: barkColor });
     for(var bi=0; bi<4; bi++){
-      var br = new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.06,0.3,5), branchMat);
-      br.position.set((bi-1.5)*fullWidth*0.22, 0.16, 0);
+      var br = new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.06,0.3,5), mat);
+      br.position.set((bi-1.5)*width*0.22, 0.16, 0);
       br.rotation.z = 0.7 + Math.random()*0.3;
       m.add(br);
     }
+    return m;
+  }
+  function makeLogHurdle(barkColor){
+    var fullWidth = LANE_HALF*2 + 0.6;
+    var m = makeLogHurdleMesh(barkColor, fullWidth);
     return { mesh:m, halfW:fullWidth/2, halfD:0.3, jumpable:true, clearHeight:0.5 };
   }
-  function makeLowLogHurdle(){ return makeLogHurdle(0x6b4a2c); }
-  function makeLowRailHurdle(){ return makeLogHurdle(0x9c8058); }
+  function makeLowLogHurdle(){ return makeLogHurdle(0x5a3c22); }
+  function makeLowRailHurdle(){ return makeLogHurdle(0x8a6a48); }
+
+  // partial-width jumpable log — covers a fraction of the road flush
+  // against one side, so the far side stays open to dodge through instead
+  function makePartialLogHurdle(barkColor, fraction, side){
+    var fullWidth = LANE_HALF*2 + 0.6;
+    var logWidth = fullWidth * fraction;
+    var m = makeLogHurdleMesh(barkColor, logWidth);
+    m.position.x = side * (fullWidth/2 - logWidth/2);
+    return { mesh:m, halfW:logWidth/2, halfD:0.3, jumpable:true, clearHeight:0.5, fixedX:true };
+  }
 
   function spawnChunk(){
     var zone = currentZone;
@@ -545,8 +576,16 @@
 
       var picked;
       if(wantHurdle){
-        picked = (zone === ZONE.FOREST) ? makeLowLogHurdle() : makeLowRailHurdle();
-        picked.mesh.position.x = 0;
+        if(Math.random() < 0.45){
+          picked = (zone === ZONE.FOREST) ? makeLowLogHurdle() : makeLowRailHurdle();
+          picked.mesh.position.x = 0;
+        } else {
+          var hurdleColor = (zone === ZONE.FOREST) ? 0x5a3c22 : 0x8a6a48;
+          var fractions = [0.5, 1/3, 2/3];
+          var frac = fractions[Math.floor(Math.random()*3)];
+          var pSide = Math.random()<0.5 ? -1 : 1;
+          picked = makePartialLogHurdle(hurdleColor, frac, pSide);
+        }
       } else {
   var ox = (Math.random()*2-1) * (LANE_HALF-0.6);
         if(zone === ZONE.FOREST){
@@ -556,7 +595,7 @@
           } else if(forestRoll < 0.45){
             picked = makeStandingTreeObstacle();
           } else if(forestRoll < 0.72){
-            picked = makeLogObstacle();
+            picked = Math.random()<0.5 ? makeVerticalLogObstacle() : makeLogPileObstacle();
           } else {
             picked = makeRockObstacle();
           }
@@ -666,19 +705,27 @@
     scarfBody.position.set(0, 0.28, -0.2);
     pHip.add(scarfBody);
 
+    // each edge gets a pair of thin parallel pinstripes (not just one),
+    // matching the reference photo's double-line trim
     var scarfStripeMat = new THREE.MeshLambertMaterial({ color:0x111111, side: THREE.DoubleSide });
     var edgeDX = 0 - (-scarfW), edgeDY = 0 - scarfH;
     var edgeLen = Math.sqrt(edgeDX*edgeDX + edgeDY*edgeDY);
     var edgeAngle = Math.atan2(-edgeDX, edgeDY);
-    var scarfStripe1 = new THREE.Mesh(new THREE.BoxGeometry(0.03, edgeLen*0.82, 0.015), scarfStripeMat);
-    scarfStripe1.position.set(-scarfW/2, 0.28 + scarfH/2, -0.212);
-    scarfStripe1.rotation.z = edgeAngle;
-    pHip.add(scarfStripe1);
+    var perpX = -edgeDY/edgeLen, perpY = edgeDX/edgeLen; // unit perpendicular to the edge
+    var midY = 0.28 + scarfH/2;
+    var stripeOffsets = [-0.022, 0.022];
 
-    var scarfStripe2 = new THREE.Mesh(new THREE.BoxGeometry(0.03, edgeLen*0.82, 0.015), scarfStripeMat);
-    scarfStripe2.position.set(scarfW/2, 0.28 + scarfH/2, -0.212);
-    scarfStripe2.rotation.z = -edgeAngle;
-    pHip.add(scarfStripe2);
+    stripeOffsets.forEach(function(off){
+      var left = new THREE.Mesh(new THREE.BoxGeometry(0.02, edgeLen*0.82, 0.015), scarfStripeMat);
+      left.position.set(-scarfW/2 + perpX*off, midY + perpY*off, -0.212);
+      left.rotation.z = edgeAngle;
+      pHip.add(left);
+
+      var right = new THREE.Mesh(new THREE.BoxGeometry(0.02, edgeLen*0.82, 0.015), scarfStripeMat);
+      right.position.set(scarfW/2 - perpX*off, midY + perpY*off, -0.212);
+      right.rotation.z = -edgeAngle;
+      pHip.add(right);
+    });
 
     var head = new THREE.Mesh(new THREE.SphereGeometry(0.22,10,8), skin);
     head.position.y = 0.78;
@@ -965,8 +1012,8 @@
   var playerX = 0, playerTargetX = 0;
   var speed = 6.4, baseSpeed = 6.4;
   var distance = 0;
-  var BASE_CATCH_GAP = 4.3; // scout-to-boar resting distance — a bigger head start
-  var MAX_CATCH_GAP = 5.2;
+  var BASE_CATCH_GAP = 5.0; // scout-to-boar resting distance — a bigger head start
+  var MAX_CATCH_GAP = 5.8;
   var CATCH_THRESHOLD = 0.35;
   var catchGap = BASE_CATCH_GAP;
   var runPhase = 0;
@@ -976,7 +1023,7 @@
   // so his RENDERED distance is a compressed view of the real (gameplay)
   // catchGap — farther away still reads as farther, just capped so he never
   // scrolls out of shot
-  var BOAR_VISUAL_MAX = 2.6;
+  var BOAR_VISUAL_MAX = 2.7;
   function visualCatchGap(gap){
     var t = (gap - CATCH_THRESHOLD) / (MAX_CATCH_GAP - CATCH_THRESHOLD);
     t = Math.max(0, Math.min(1, t));
@@ -1354,20 +1401,26 @@
       var oHalfD = (o.halfD !== undefined) ? o.halfD : 0.4;
       var zNear = Math.abs(visZ) < (PLAYER_HALF_D + oHalfD);
       if(zNear){
+        var combined = PLAYER_HALF_W + o.halfW;
+        var lateralDist = Math.abs(playerX - o.mesh.position.x);
+        var lateralOverlap = lateralDist < combined;
         if(o.jumpable){
-          if(throwTimer > 0){
-            // mid-throw cutscene: auto-clear low hurdles with a visual hop
-            // instead of requiring the player to time a jump
-            var hopT = 1 - Math.min(1, Math.abs(visZ) / (PLAYER_HALF_D + oHalfD));
-            autoHopBoost = Math.max(autoHopBoost, Math.sin(Math.PI*hopT) * 0.55);
-          } else if(playerY < o.clearHeight){
-            triggerCaught();
-            return;
+          // partial-width logs only block where they actually lie — step
+          // outside their footprint (the open part of the road) and there's
+          // nothing to jump at all
+          if(lateralOverlap){
+            if(throwTimer > 0){
+              // mid-throw cutscene: auto-clear low hurdles with a visual hop
+              // instead of requiring the player to time a jump
+              var hopT = 1 - Math.min(1, Math.abs(visZ) / (PLAYER_HALF_D + oHalfD));
+              autoHopBoost = Math.max(autoHopBoost, Math.sin(Math.PI*hopT) * 0.55);
+            } else if(playerY < o.clearHeight){
+              triggerCaught();
+              return;
+            }
           }
         } else {
-          var combined = PLAYER_HALF_W + o.halfW;
-          var lateralDist = Math.abs(playerX - o.mesh.position.x);
-          if(lateralDist < combined){
+          if(lateralOverlap){
             triggerCaught();
             return;
           }
