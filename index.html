@@ -77,6 +77,28 @@
   .tiltIcon{ font-size:44px; }
   .modeChoice{ display:flex; gap:12px; justify-content:center; flex-wrap:wrap; margin-top:2px; }
   .modeChoice .btn{ margin-top:0; padding:12px 20px; font-size:15px; }
+  .choiceGroup{ display:flex; flex-direction:column; align-items:center; gap:6px; }
+  .choiceLabel{ font-size:11px; letter-spacing:1.4px; text-transform:uppercase; opacity:.5; }
+  .pick{
+    padding:10px 18px; font-size:14px; font-weight:700; cursor:pointer;
+    color:var(--cream); background:rgba(242,233,216,.06);
+    border:1px solid rgba(242,233,216,.28); border-radius:12px;
+  }
+  .pick.selected{
+    color:var(--ink); background:var(--cream); border-color:var(--cream);
+  }
+  .campTask{
+    position:absolute;
+    top:calc(98px + env(safe-area-inset-top,0px));
+    left:50%; transform:translateX(-50%);
+    color:var(--cream); font-size:13px; font-weight:700;
+    pointer-events:none; text-align:center; max-width:86%;
+    background:rgba(0,0,0,.42);
+    padding:6px 14px; border-radius:10px;
+    border:1px solid rgba(232,150,60,.45);
+    text-shadow:0 2px 6px rgba(0,0,0,.6);
+  }
+  .campTask .prog{ color:var(--accent); }
   .score-line{ display:flex; gap:18px; justify-content:center; flex-wrap:wrap; }
   .score-line div{ display:flex; flex-direction:column; align-items:center; }
   .score-line .n{ font-size:26px; font-weight:800; color:var(--accent); }
@@ -113,20 +135,38 @@
 
   <div class="hud hidden" id="hud">
     <div><div class="label">dystans</div><div class="val" id="scoreVal">0 m</div></div>
-    <div style="text-align:center"><div class="label pineconeIcon"><svg viewBox="0 0 24 30" width="14" height="17" aria-hidden="true"><path d="M12 2 C18 7,19 14,15 22 C13 27,11 27,9 22 C5 14,6 7,12 2 Z" fill="#c7943f"/><path d="M6.5 10 L17.5 10 M5.5 15 L18.5 15 M6.5 20 L17.5 20" stroke="#8a5f22" stroke-width="1.3" stroke-linecap="round"/></svg></div><div class="val" id="pineconeVal">0</div></div>
-    <div style="text-align:right"><div class="label">rekord</div><div class="val" id="bestVal">0 m</div></div>
+    <div style="text-align:center">
+      <div class="label pineconeIcon" id="pineconeIcon"><svg viewBox="0 0 24 30" width="14" height="17" aria-hidden="true"><path d="M12 2 C18 7,19 14,15 22 C13 27,11 27,9 22 C5 14,6 7,12 2 Z" fill="#c7943f"/><path d="M6.5 10 L17.5 10 M5.5 15 L18.5 15 M6.5 20 L17.5 20" stroke="#8a5f22" stroke-width="1.3" stroke-linecap="round"/></svg></div>
+      <div class="label hidden" id="midLabel">czas</div>
+      <div class="val" id="pineconeVal">0</div>
+    </div>
+    <div style="text-align:right"><div class="label" id="rightLabel">rekord</div><div class="val" id="bestVal">0 m</div></div>
   </div>
   <div class="zoneTag hidden" id="zoneTag">las</div>
+  <div class="campTask hidden" id="campTask"></div>
   <div class="debugTag hidden" id="debugTag">tryb: —</div>
 
   <div class="overlay" id="startScreen">
     <div class="badge">🌲 leśna ucieczka · 3D</div>
     <h1>Ucieczka przed dzikiem!</h1>
-    <p>Biegniesz przed siebie przez las, pola i rzeki, a dzik depcze ci po piętach. Wybierz sterowanie: przechyłem telefonu wymijasz przeszkody bokiem i skaczesz pochyleniem do przodu/tyłu, albo dotykiem — przeciągasz palcem, żeby skręcać, i stukasz, żeby skoczyć. Wysokich płotków i przeszkód nie da się przeskoczyć — trzeba je wyminąć bokiem. Zbieraj szyszki leżące na ścieżce — po zebraniu 8 harcerz sam odwróci się i w zwolnionym tempie obrzuci nimi dzika. W rzece popłyniesz — skok wynurza cię na chwilę, potem znów nurkujesz.</p>
-    <div class="modeChoice">
-      <button class="btn" id="startTiltBtn">📱 Żyroskop</button>
-      <button class="btn secondary" id="startTouchBtn">👆 Dotyk</button>
+    <p id="modeDesc">Biegniesz przed siebie przez las, pola, bagna i rzeki, a dzik depcze ci po piętach. Wysokich przeszkód nie da się przeskoczyć — trzeba je wyminąć bokiem. Zbieraj szyszki leżące na ścieżce — po zebraniu 8 harcerz sam odwróci się i w zwolnionym tempie obrzuci nimi dzika. W rzece popłyniesz, a na bagnie ugrzęźniesz.</p>
+
+    <div class="choiceGroup">
+      <div class="choiceLabel">tryb gry</div>
+      <div class="modeChoice">
+        <button class="pick selected" id="modeChaseBtn">🐗 Ucieczka</button>
+        <button class="pick" id="modeCampBtn">⛺ Życie na obozie</button>
+      </div>
     </div>
+
+    <div class="choiceGroup">
+      <div class="choiceLabel">sterowanie — stuknij, żeby zacząć</div>
+      <div class="modeChoice">
+        <button class="btn" id="startTiltBtn">📱 Żyroskop</button>
+        <button class="btn secondary" id="startTouchBtn">👆 Dotyk</button>
+      </div>
+    </div>
+
     <div class="modeNote" id="supportNote"></div>
     <div class="modeNote">Jeśli grasz z podglądu w aplikacji Claude, otwórz ten link wprost w przeglądarce telefonu (Chrome/Safari) — osadzony podgląd czasem blokuje czujnik przechyłu.</div>
   </div>
@@ -146,13 +186,14 @@
 
   <div class="overlay hidden" id="overScreen">
     <div class="badge" id="caughtBadge">🐗 dzik cię dogonił</div>
-    <h1>Koniec zwiadu</h1>
+    <h1 id="overTitle">Koniec zwiadu</h1>
     <div class="score-line">
-      <div><div class="n" id="finalScore">0 m</div><div class="l">ten przebieg</div></div>
-      <div><div class="n" id="finalBest">0 m</div><div class="l">rekord</div></div>
-      <div><div class="n" id="finalPinecones">0</div><div class="l">szyszki</div></div>
+      <div><div class="n" id="finalScore">0 m</div><div class="l" id="finalScoreLabel">ten przebieg</div></div>
+      <div><div class="n" id="finalBest">0 m</div><div class="l" id="finalBestLabel">rekord</div></div>
+      <div><div class="n" id="finalPinecones">0</div><div class="l" id="finalPineconesLabel">szyszki</div></div>
     </div>
-    <button class="btn" id="retryBtn">Uciekaj jeszcze raz</button>
+    <button class="btn" id="retryBtn">Jeszcze raz</button>
+    <button class="btn secondary" id="changeModeBtn">Zmień tryb / sterowanie</button>
     <button class="btn secondary" id="recalibrateBtn">Skalibruj ponownie</button>
   </div>
 </div>
@@ -174,9 +215,22 @@
   var overScreen = document.getElementById('overScreen');
   var startTiltBtn = document.getElementById('startTiltBtn');
   var startTouchBtn = document.getElementById('startTouchBtn');
+  var modeChaseBtn = document.getElementById('modeChaseBtn');
+  var modeCampBtn = document.getElementById('modeCampBtn');
+  var modeDesc = document.getElementById('modeDesc');
+  var campTask = document.getElementById('campTask');
+  var pineconeIcon = document.getElementById('pineconeIcon');
+  var midLabel = document.getElementById('midLabel');
+  var rightLabel = document.getElementById('rightLabel');
+  var caughtBadge = document.getElementById('caughtBadge');
+  var overTitle = document.getElementById('overTitle');
+  var finalScoreLabel = document.getElementById('finalScoreLabel');
+  var finalBestLabel = document.getElementById('finalBestLabel');
+  var finalPineconesLabel = document.getElementById('finalPineconesLabel');
   var calibrateBtn = document.getElementById('calibrateBtn');
   var retryBtn = document.getElementById('retryBtn');
   var recalibrateBtn = document.getElementById('recalibrateBtn');
+  var changeModeBtn = document.getElementById('changeModeBtn');
   var finalScore = document.getElementById('finalScore');
   var finalBest = document.getElementById('finalBest');
   var finalPinecones = document.getElementById('finalPinecones');
@@ -198,8 +252,14 @@
     supportNote.textContent = 'Strona nie jest otwarta przez https — czujnik przechyłu może nie działać w tej przeglądarce. Jeśli sterowanie nie zadziała, gra przełączy się na sterowanie dotykiem.';
   }
 
+  // two independent game modes: the chase (outrun the boar) and camp life
+  // (work through camp chores against the clock). Each keeps its own record.
+  var gameMode = 'chase'; // 'chase' | 'camp'
+
   var BEST = 0;
   try { BEST = parseInt(localStorage.getItem('dzik3d_best') || '0', 10) || 0; } catch(e){ BEST = 0; }
+  var BEST_CAMP = 0;
+  try { BEST_CAMP = parseInt(localStorage.getItem('dzik3d_best_camp') || '0', 10) || 0; } catch(e){ BEST_CAMP = 0; }
   bestVal.textContent = BEST + ' m';
 
   var hasOrientationAPI = (typeof window.DeviceOrientationEvent !== 'undefined');
@@ -268,12 +328,13 @@
   // loose scattered debris/particles (hay burst, etc.)
   var particles = []; // {mesh, vel:THREE.Vector3, life}
 
-  var ZONE = { FOREST:'forest', FIELD:'field', RIVER:'river' };
-  // relative frequency when picking the next zone — river is deliberately
-  // rare, forest more common than field
+  var ZONE = { FOREST:'forest', FIELD:'field', RIVER:'river', SWAMP:'swamp' };
+  // relative frequency when picking the next zone — river and swamp are
+  // deliberately rare, forest more common than field
   var ZONE_WEIGHTS = [
     { zone: ZONE.FOREST, w: 5 },
     { zone: ZONE.FIELD,  w: 3 },
+    { zone: ZONE.SWAMP,  w: 2 },
     { zone: ZONE.RIVER,  w: 1 }
   ];
   function pickNextZone(excludeZone){
@@ -311,12 +372,20 @@
   function zoneColor(zone){
     if(zone === ZONE.FOREST) return 0x24391f;
     if(zone === ZONE.FIELD) return 0xb08a34;
+    if(zone === ZONE.SWAMP) return 0x3c4326; // murky marsh growth
     return 0x2d6ea3; // river water
   }
   function pathColor(zone){
     if(zone === ZONE.RIVER) return zoneColor(zone); // river spans the full width, no separate lane
     if(zone === ZONE.FOREST) return 0x3a4a28; // muted, closer to the forest floor tone
+    if(zone === ZONE.SWAMP) return 0x4a4530; // wet, churned-up mud track
     return 0x9c7a3a; // muted, closer to the field tone
+  }
+  function zoneLabel(zone){
+    if(zone === ZONE.FOREST) return 'las';
+    if(zone === ZONE.FIELD) return 'pole';
+    if(zone === ZONE.SWAMP) return 'bagno';
+    return 'rzeka';
   }
   function getActiveZoneMarker(){
     for(var zi=0; zi<zoneMarkers.length; zi++){
@@ -359,6 +428,42 @@
       var blade = new THREE.Mesh(new THREE.ConeGeometry(0.03, h, 4), mat);
       blade.position.set((Math.random()-0.5)*0.3, h/2, (Math.random()-0.5)*0.3);
       blade.rotation.z = (Math.random()-0.5)*0.3;
+      g.add(blade);
+    }
+    g.position.set(x, 0, z);
+    return g;
+  }
+
+  // swamp scenery: bare dead trunks and clumps of marsh grass poking out of
+  // the mud, so the bog reads differently from both forest and riverbank
+  function makeSwampSnag(x, z){
+    var g = new THREE.Group();
+    var barkMat = new THREE.MeshLambertMaterial({ color:0x4b4436 });
+    var h = 1.4 + Math.random()*1.4;
+    var trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.16,h,6), barkMat);
+    trunk.position.y = h/2;
+    trunk.rotation.z = (Math.random()-0.5)*0.35;
+    g.add(trunk);
+    var branchCount = 1 + Math.floor(Math.random()*2);
+    for(var i=0;i<branchCount;i++){
+      var br = new THREE.Mesh(new THREE.CylinderGeometry(0.035,0.05,0.5,5), barkMat);
+      br.position.set(0, h*(0.6 + Math.random()*0.3), 0);
+      br.rotation.z = (Math.random()<0.5 ? 1 : -1) * (0.8 + Math.random()*0.5);
+      g.add(br);
+    }
+    g.position.set(x, 0, z);
+    return g;
+  }
+
+  function makeSwampTuft(x, z){
+    var g = new THREE.Group();
+    var mat = new THREE.MeshLambertMaterial({ color:0x5c6b33 });
+    var count = 4 + Math.floor(Math.random()*4);
+    for(var i=0;i<count;i++){
+      var h = 0.35 + Math.random()*0.45;
+      var blade = new THREE.Mesh(new THREE.ConeGeometry(0.05, h, 4), mat);
+      blade.position.set((Math.random()-0.5)*0.5, h/2, (Math.random()-0.5)*0.5);
+      blade.rotation.z = (Math.random()-0.5)*0.5;
       g.add(blade);
     }
     g.position.set(x, 0, z);
@@ -457,6 +562,62 @@
     return g;
   }
 
+  // ---------- CAMP-LIFE PICKUPS ----------
+  // camp-mode supplies lying on the path: firewood, a water bucket and a
+  // ration crate, alongside the pinecones the chase mode already uses
+  function makeFirewoodPickup(){
+    var g = new THREE.Group();
+    var mat = new THREE.MeshLambertMaterial({ color:0x7a5230 });
+    var offsets = [[-0.11,0.11,0], [0.11,0.11,0], [0,0.28,0]];
+    for(var i=0;i<offsets.length;i++){
+      var logM = new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.09,0.5,6), mat);
+      logM.rotation.z = Math.PI/2;
+      logM.position.set(offsets[i][0], offsets[i][1], offsets[i][2]);
+      g.add(logM);
+    }
+    return g;
+  }
+
+  function makeWaterPickup(){
+    var g = new THREE.Group();
+    var bodyMat = new THREE.MeshLambertMaterial({ color:0x9aa7ad });
+    var waterMat = new THREE.MeshLambertMaterial({ color:0x3f9fd6 });
+    var pail = new THREE.Mesh(new THREE.CylinderGeometry(0.19,0.14,0.32,8), bodyMat);
+    pail.position.y = 0.16;
+    g.add(pail);
+    var surf = new THREE.Mesh(new THREE.CircleGeometry(0.175, 8), waterMat);
+    surf.rotation.x = -Math.PI/2;
+    surf.position.y = 0.31;
+    g.add(surf);
+    var handle = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.018, 4, 10, Math.PI), bodyMat);
+    handle.position.y = 0.32;
+    g.add(handle);
+    return g;
+  }
+
+  function makeFoodPickup(){
+    var g = new THREE.Group();
+    var crateMat = new THREE.MeshLambertMaterial({ color:0xc0a06a });
+    var bandMat = new THREE.MeshLambertMaterial({ color:0x6d5227 });
+    var crate = new THREE.Mesh(new THREE.BoxGeometry(0.36,0.3,0.3), crateMat);
+    crate.position.y = 0.16;
+    g.add(crate);
+    var bandV = new THREE.Mesh(new THREE.BoxGeometry(0.07,0.32,0.32), bandMat);
+    bandV.position.y = 0.16;
+    g.add(bandV);
+    var bandH = new THREE.Mesh(new THREE.BoxGeometry(0.38,0.07,0.32), bandMat);
+    bandH.position.y = 0.16;
+    g.add(bandH);
+    return g;
+  }
+
+  function makeCampPickup(kind){
+    if(kind === 'wood') return makeFirewoodPickup();
+    if(kind === 'water') return makeWaterPickup();
+    if(kind === 'food') return makeFoodPickup();
+    return makePineconePickup();
+  }
+
   // Low hurdles: always lie horizontally across the road, and can be
   // jumped. Full-width ones can't be dodged sideways at all; partial-width
   // ones (half / third / two-thirds of the road) leave the rest of the
@@ -535,6 +696,7 @@
       var mesh;
       if(zone === ZONE.FOREST){ mesh = makeTree(dx, 0); }
       else if(zone === ZONE.FIELD){ mesh = makeHay(dx, 0); }
+      else if(zone === ZONE.SWAMP){ mesh = Math.random()<0.45 ? makeSwampSnag(dx, 0) : makeSwampTuft(dx, 0); }
       else { mesh = makeReeds(dx, 0); }
       mesh.position.z = dz;
       world.add(mesh);
@@ -558,25 +720,44 @@
 
     // pinecone pickups scattered along the path (not in the river) — spread
     // into non-overlapping slots so two never land right next to each other
+    // in camp mode the same slots carry the camp's supplies instead, and
+    // there are more of them — gathering, not dodging, is the whole job
     if(zone !== ZONE.RIVER){
-      var pineconeSpawnCount = 1 + (Math.random() < 0.35 ? 1 : 0);
+      var isCamp = (gameMode === 'camp');
+      var pineconeSpawnCount = isCamp
+        ? (2 + (Math.random() < 0.5 ? 1 : 0))
+        : (1 + (Math.random() < 0.35 ? 1 : 0));
       var pineconeSlotLen = (CHUNK_LEN-4) / pineconeSpawnCount;
       for(var pk=0; pk<pineconeSpawnCount; pk++){
         var slotStart = centerZ - (CHUNK_LEN-4)/2 + pk*pineconeSlotLen;
         var pz = slotStart + Math.random()*pineconeSlotLen;
         var px = (Math.random()*2-1) * (LANE_HALF-0.5);
-        var pmesh = makePineconePickup();
+        var pkind = 'cone';
+        if(isCamp){
+          // over half of what's lying around is what the current chore needs,
+          // so the chore is always doable without being a giveaway
+          pkind = (Math.random() < 0.55)
+            ? currentChore().item
+            : CAMP_ITEM_KINDS[Math.floor(Math.random()*CAMP_ITEM_KINDS.length)];
+        }
+        var pmesh = isCamp ? makeCampPickup(pkind) : makePineconePickup();
         pmesh.position.set(px, 0, pz);
         world.add(pmesh);
-        pinecones.push({ mesh:pmesh, localZ: pz });
+        pinecones.push({ mesh:pmesh, localZ: pz, kind: pkind });
       }
     }
 
     // obstacles: 0-2 per chunk, skip a safe intro chunk and the river (swum, not dodged)
-    var obstacleCount = (zone === ZONE.RIVER || chunks.length <= 2) ? 0 : (1 + (Math.random()<0.55 ? 1 : 0));
+    var obstacleCount;
+    if(zone === ZONE.RIVER || chunks.length <= 2){ obstacleCount = 0; }
+    // the bog already fights the scout, so it stays sparse
+    else if(zone === ZONE.SWAMP){ obstacleCount = (Math.random() < 0.7) ? 1 : 0; }
+    else { obstacleCount = 1 + (Math.random()<0.55 ? 1 : 0); }
     for(var j=0;j<obstacleCount;j++){
       var oz = centerZ + (Math.random()-0.5)*(CHUNK_LEN-6);
-      var wantHurdle = Math.random() < 0.4;
+      // nothing to hop over in the bog — mud kills the jump, so everything
+      // there has to be sidestepped instead
+      var wantHurdle = (zone !== ZONE.SWAMP) && (Math.random() < 0.4);
 
       // enforce minimum spacing from the previously placed obstacle in the
       // spawn sequence, so two jumpable hurdles never end up back-to-back
@@ -610,6 +791,11 @@
           } else {
             picked = makeRockObstacle();
           }
+        } else if(zone === ZONE.SWAMP){
+          var swampRoll = Math.random();
+          if(swampRoll < 0.4){ picked = makeVerticalLogObstacle(); }
+          else if(swampRoll < 0.7){ picked = makeLogPileObstacle(); }
+          else { picked = makeRockObstacle(); }
         } else {
           picked = Math.random()<0.5 ? makeHayBaleObstacle() : makeFenceObstacle();
         }
@@ -639,7 +825,9 @@
       if(Math.random() < 0.65){
         currentZone = pickNextZone(currentZone);
       }
-      zoneRemaining = (currentZone === ZONE.RIVER) ? (14 + Math.random()*10) : (40 + Math.random()*35);
+      if(currentZone === ZONE.RIVER){ zoneRemaining = 14 + Math.random()*10; }
+      else if(currentZone === ZONE.SWAMP){ zoneRemaining = 26 + Math.random()*18; }
+      else { zoneRemaining = 40 + Math.random()*35; }
     }
   }
 
@@ -725,6 +913,20 @@
     var perpX = -edgeDY/edgeLen, perpY = edgeDX/edgeLen; // unit perpendicular to the edge
     var midY = 0.28 + scarfH/2;
     var stripeOffsets = [-0.022, 0.022];
+
+    // the channel between each pair of black stripes is filled green, so the
+    // trim reads as a green band framed by two dark lines
+    var scarfGreenMat = new THREE.MeshLambertMaterial({ color:0x2f7d32, side: THREE.DoubleSide });
+    var greenW = (stripeOffsets[1] - stripeOffsets[0]) - 0.02 + 0.004; // gap between the stripe inner edges
+    var greenLeft = new THREE.Mesh(new THREE.BoxGeometry(greenW, edgeLen*0.82, 0.014), scarfGreenMat);
+    greenLeft.position.set(-scarfW/2, midY, -0.208);
+    greenLeft.rotation.z = edgeAngle;
+    pHip.add(greenLeft);
+
+    var greenRight = new THREE.Mesh(new THREE.BoxGeometry(greenW, edgeLen*0.82, 0.014), scarfGreenMat);
+    greenRight.position.set(scarfW/2, midY, -0.208);
+    greenRight.rotation.z = -edgeAngle;
+    pHip.add(greenRight);
 
     stripeOffsets.forEach(function(off){
       var left = new THREE.Mesh(new THREE.BoxGeometry(0.02, edgeLen*0.82, 0.015), scarfStripeMat);
@@ -918,6 +1120,28 @@
     }
   }
 
+  // clods of mud kicked up by every heavy step through the bog
+  var MUD_SPLASH_MAT = new THREE.MeshLambertMaterial({ color:0x5c4b2a });
+  function spawnMudSplash(){
+    for(var k=0;k<3;k++){
+      var d = new THREE.Mesh(new THREE.BoxGeometry(0.07,0.05,0.07), MUD_SPLASH_MAT);
+      d.position.set(
+        player.position.x + (Math.random()-0.5)*0.45,
+        0.08,
+        player.position.z + (Math.random()-0.5)*0.3
+      );
+      scene.add(d);
+      var ang = Math.random()*Math.PI*2;
+      var spd = 0.6 + Math.random()*1.0;
+      particles.push({
+        mesh: d,
+        vel: new THREE.Vector3(Math.cos(ang)*spd, 1.1 + Math.random()*0.8, Math.sin(ang)*spd),
+        life: 0.3 + Math.random()*0.25,
+        parent: scene
+      });
+    }
+  }
+
   function triggerHayBaleNearMiss(o){
     o.nearMissDone = true;
     world.remove(o.mesh);
@@ -1074,6 +1298,97 @@
   var pineconeProjectiles = [];
   var PINECONE_PROJECTILE_MAT = new THREE.MeshLambertMaterial({ color:0x6b4423 });
 
+  // ---------- CAMP-LIFE MODE ----------
+  // No boar here: instead the scout works through the camp's chore list
+  // against the clock. Every finished chore buys more time; blundering into
+  // an obstacle costs some.
+  var CAMP_START_TIME = 45;
+  var CAMP_CHORE_BONUS = 14;
+  var CAMP_PICKUP_BONUS = 1;
+  var CAMP_OBSTACLE_PENALTY = 4;
+  var CAMP_STUMBLE_DURATION = 0.7;
+
+  var CAMP_CHORES = [
+    { item:'wood',  need:3, text:'Nazbieraj drewna na ognisko' },
+    { item:'water', need:2, text:'Przynieś wodę do kuchni' },
+    { item:'cone',  need:4, text:'Zbierz szyszki na rozpałkę' },
+    { item:'food',  need:3, text:'Donieś prowiant z magazynu' },
+    { item:'wood',  need:4, text:'Dołóż drewna pod kocioł' },
+    { item:'water', need:3, text:'Napełnij kanki na noc' }
+  ];
+  var CAMP_ITEM_ICON = { wood:'🪵', water:'🪣', food:'📦', cone:'🌰' };
+  var CAMP_ITEM_KINDS = ['wood','water','food','cone'];
+
+  var campTimer = 0;
+  var campChoreIndex = 0;
+  var campChoreProgress = 0;
+  var campChoresDone = 0;
+  var campStumbleTimer = 0;
+
+  // the list loops, asking for one more of everything on each full lap
+  function currentChore(){
+    var base = CAMP_CHORES[campChoreIndex % CAMP_CHORES.length];
+    var lap = Math.floor(campChoreIndex / CAMP_CHORES.length);
+    return { item: base.item, need: base.need + lap, text: base.text };
+  }
+
+  // full refresh — only on an actual change, since it rebuilds the banner
+  function updateCampHUD(){
+    var chore = currentChore();
+    campTask.innerHTML = CAMP_ITEM_ICON[chore.item] + ' ' + chore.text +
+      ' <span class="prog">' + campChoreProgress + '/' + chore.need + '</span>';
+    bestVal.textContent = campChoresDone;
+    updateCampClock();
+  }
+
+  // the clock alone, cheap enough to run every frame
+  var campClockShown = -1;
+  function updateCampClock(){
+    var secs = Math.max(0, Math.ceil(campTimer));
+    if(secs !== campClockShown){
+      campClockShown = secs;
+      pineconeVal.textContent = secs + ' s';
+    }
+  }
+
+  function campCollect(kind){
+    var chore = currentChore();
+    if(kind !== chore.item){
+      // wrong supply — it stays in the pack, but it doesn't tick the chore on
+      updateCampHUD();
+      return;
+    }
+    campChoreProgress++;
+    campTimer += CAMP_PICKUP_BONUS;
+    if(campChoreProgress >= chore.need){
+      campChoresDone++;
+      campChoreIndex++;
+      campChoreProgress = 0;
+      campTimer += CAMP_CHORE_BONUS;
+      var next = currentChore();
+      showToast('Zadanie wykonane! +' + CAMP_CHORE_BONUS + ' s · teraz: ' + next.text, 2800);
+    }
+    updateCampHUD();
+  }
+
+  function campStumble(){
+    campTimer -= CAMP_OBSTACLE_PENALTY;
+    campStumbleTimer = CAMP_STUMBLE_DURATION;
+    spawnMudSplash();
+    showToast('Potknięcie! −' + CAMP_OBSTACLE_PENALTY + ' s', 1400);
+    updateCampHUD();
+  }
+
+  // swamp wading: the bog drags the scout down, slows his stride, makes
+  // sidestepping heavy and robs the jump of almost all of its height, so the
+  // only way through is to steer around everything
+  var inMud = false;
+  var mudBlend = 0;           // eased 0..1, so entering/leaving the bog isn't a jolt
+  var MUD_SPEED_FACTOR = 0.68;
+  var MUD_JUMP_FACTOR = 0.45;
+  var MUD_SINK = 0.16;
+  var mudSplashAccum = 0;
+
   // river swimming
   var inWater = false;
   var surfaceTimer = 0;
@@ -1099,8 +1414,10 @@
       return;
     }
     if(!onGround) return;
-    playerVY = JUMP_VELOCITY;
+    // in the bog the mud holds him down — barely a hop
+    playerVY = JUMP_VELOCITY * (1 - mudBlend*(1 - MUD_JUMP_FACTOR));
     onGround = false;
+    if(inMud){ spawnMudSplash(); }
   }
 
   function triggerPineconeThrow(){
@@ -1130,6 +1447,17 @@
   }
 
   function resetRun(){
+    // camp state first: clearWorld() spawns the opening chunks, and in camp
+    // mode their pickups are biased toward the *current* chore
+    campTimer = CAMP_START_TIME;
+    campChoreIndex = 0;
+    campChoreProgress = 0;
+    campChoresDone = 0;
+    campStumbleTimer = 0;
+    campClockShown = -1;
+    boar.visible = (gameMode !== 'camp');
+    applyModeHUD();
+
     clearWorld();
     playerX = 0; playerTargetX = 0;
     speed = baseSpeed;
@@ -1155,7 +1483,41 @@
     surfaceTimer = 0;
     wetTimer = 0;
     wetDripAccum = 0;
+    inMud = false;
+    mudBlend = 0;
+    mudSplashAccum = 0;
   }
+
+  // swap the HUD between the chase readout (szyszki / rekord) and the camp
+  // readout (czas / wykonane zadania)
+  function applyModeHUD(){
+    if(gameMode === 'camp'){
+      pineconeIcon.classList.add('hidden');
+      midLabel.classList.remove('hidden');
+      rightLabel.textContent = 'zadania';
+      updateCampHUD();
+    } else {
+      pineconeIcon.classList.remove('hidden');
+      midLabel.classList.add('hidden');
+      rightLabel.textContent = 'rekord';
+      bestVal.textContent = BEST + ' m';
+      updatePineconeHUD();
+    }
+  }
+
+  var MODE_DESC = {
+    chase: 'Biegniesz przed siebie przez las, pola, bagna i rzeki, a dzik depcze ci po piętach. Wysokich przeszkód nie da się przeskoczyć — trzeba je wyminąć bokiem. Zbieraj szyszki leżące na ścieżce — po zebraniu 8 harcerz sam odwróci się i w zwolnionym tempie obrzuci nimi dzika. W rzece popłyniesz, a na bagnie ugrzęźniesz.',
+    camp: 'Dzień na obozie: żadnego dzika, za to lista zadań i zegar. Zbieraj to, czego akurat potrzebuje obóz — drewno 🪵, wodę 🪣, prowiant 📦 i szyszki 🌰 — a każde wykonane zadanie dorzuca ' + CAMP_CHORE_BONUS + ' sekund. Potknięcie o przeszkodę kosztuje ' + CAMP_OBSTACLE_PENALTY + ' sekundy. Gra kończy się, gdy skończy się czas.'
+  };
+
+  function selectGameMode(mode){
+    gameMode = mode;
+    modeChaseBtn.classList.toggle('selected', mode === 'chase');
+    modeCampBtn.classList.toggle('selected', mode === 'camp');
+    modeDesc.textContent = MODE_DESC[mode];
+  }
+  modeChaseBtn.addEventListener('click', function(){ selectGameMode('chase'); });
+  modeCampBtn.addEventListener('click', function(){ selectGameMode('camp'); });
 
   startTiltBtn.addEventListener('click', function(){
     requestOrientationPermission(function(granted){
@@ -1206,6 +1568,14 @@
     beginCountdown();
   });
 
+  // back to the start screen, where both the game mode and the control
+  // method can be picked again
+  changeModeBtn.addEventListener('click', function(){
+    overScreen.classList.add('hidden');
+    startScreen.classList.remove('hidden');
+    state = 'idle';
+  });
+
   function beginCountdown(){
     resetRun();
     state = 'countdown';
@@ -1220,6 +1590,10 @@
         hud.classList.remove('hidden');
         zoneTag.classList.remove('hidden');
         debugTag.classList.remove('hidden');
+        campTask.classList.toggle('hidden', gameMode !== 'camp');
+        if(gameMode === 'camp'){
+          showToast('Pierwsze zadanie: ' + currentChore().text, 3000);
+        }
         state = 'playing';
         clock.getDelta();
         if(controlMode === 'tilt'){
@@ -1241,16 +1615,37 @@
     state = 'over';
     hud.classList.add('hidden');
     zoneTag.classList.add('hidden');
+    campTask.classList.add('hidden');
     debugTag.classList.add('hidden');
     var meters = Math.floor(distance);
-    if(meters > BEST){
-      BEST = meters;
-      try{ localStorage.setItem('dzik3d_best', String(BEST)); }catch(e){}
+    if(gameMode === 'camp'){
+      if(campChoresDone > BEST_CAMP){
+        BEST_CAMP = campChoresDone;
+        try{ localStorage.setItem('dzik3d_best_camp', String(BEST_CAMP)); }catch(e){}
+      }
+      caughtBadge.textContent = '⛺ czas minął — koniec dnia';
+      overTitle.textContent = 'Koniec dnia na obozie';
+      finalScore.textContent = campChoresDone;
+      finalScoreLabel.textContent = 'zadania';
+      finalBest.textContent = BEST_CAMP;
+      finalBestLabel.textContent = 'rekord zadań';
+      finalPinecones.textContent = meters + ' m';
+      finalPineconesLabel.textContent = 'dystans';
+    } else {
+      if(meters > BEST){
+        BEST = meters;
+        try{ localStorage.setItem('dzik3d_best', String(BEST)); }catch(e){}
+      }
+      caughtBadge.textContent = '🐗 dzik cię dogonił';
+      overTitle.textContent = 'Koniec zwiadu';
+      finalScore.textContent = meters + ' m';
+      finalScoreLabel.textContent = 'ten przebieg';
+      finalBest.textContent = BEST + ' m';
+      finalBestLabel.textContent = 'rekord';
+      finalPinecones.textContent = pineconeTotal;
+      finalPineconesLabel.textContent = 'szyszki';
+      bestVal.textContent = BEST + ' m';
     }
-    finalScore.textContent = meters + ' m';
-    finalBest.textContent = BEST + ' m';
-    finalPinecones.textContent = pineconeTotal;
-    bestVal.textContent = BEST + ' m';
     setTimeout(function(){ overScreen.classList.remove('hidden'); }, 300);
   }
 
@@ -1260,8 +1655,21 @@
     var slowMo = throwTimer > 0 ? THROW_SLOWMO_FACTOR : 1;
     var wdt = dt * slowMo;
 
+    // which zone is actually under the scout right now (currentZone tracks
+    // the frontier chunk, several chunks ahead of where he's standing) —
+    // resolved first, because the bog changes how he moves this whole frame
+    var zoneMarker = getActiveZoneMarker();
+    var activeZone = zoneMarker ? zoneMarker.zone : currentZone;
+    var wasInMud = inMud;
+    inMud = (activeZone === ZONE.SWAMP);
+    if(inMud && !wasInMud){ showToast('Bagno! Grzęźniesz — omijaj przeszkody bokiem, skok tu nie pomoże.', 2600); }
+    // the mud drags at every step and swallows the jump
+    mudBlend += ((inMud ? 1 : 0) - mudBlend) * Math.min(1, dt*4);
+
     distance += speed*wdt;
-    speed = baseSpeed + Math.min(distance*0.012, 4.5);
+    speed = (baseSpeed + Math.min(distance*0.012, 4.5)) * (1 - mudBlend*(1 - MUD_SPEED_FACTOR));
+    // picking yourself up after a camp-mode stumble costs momentum too
+    if(campStumbleTimer > 0){ speed *= 0.45; }
 
     // steering
     if(controlMode === 'tilt'){
@@ -1271,7 +1679,8 @@
     } else if(touchTargetX !== null){
       playerTargetX = touchTargetX;
     }
-    playerX += (playerTargetX - playerX) * Math.min(1, wdt*6);
+    // sidestepping through mud is heavier than on firm ground
+    playerX += (playerTargetX - playerX) * Math.min(1, wdt*6*(1 - mudBlend*0.45));
     playerX = Math.max(-LANE_HALF+0.1, Math.min(LANE_HALF-0.1, playerX));
     player.position.x = playerX;
     player.rotation.z = (playerTargetX - playerX) * -0.15;
@@ -1310,10 +1719,6 @@
       }
     }
 
-    // which zone is actually under the scout right now (currentZone tracks
-    // the frontier chunk, several chunks ahead of where he's standing)
-    var zoneMarker = getActiveZoneMarker();
-    var activeZone = zoneMarker ? zoneMarker.zone : currentZone;
     var wasInWater = inWater;
     inWater = (activeZone === ZONE.RIVER);
     if(inWater && !wasInWater){
@@ -1368,7 +1773,8 @@
     } else {
       player.rotation.x = 0;
       if(onGround){
-        var swing = Math.sin(runPhase)*0.6;
+        // wading is a laboured, high-kneed stride rather than a light run
+        var swing = Math.sin(runPhase)*(0.6 + mudBlend*0.35);
         pLegL.rotation.x = swing;
         pLegR.rotation.x = -swing;
         pArmL.rotation.x = -swing*0.8;
@@ -1380,6 +1786,12 @@
         pArmL.rotation.x = 0.4;
         pArmR.rotation.x = -0.4;
         player.position.y = playerY;
+      }
+      // sunk ankle-deep in the bog, with mud flying up at every step
+      player.position.y -= mudBlend*MUD_SINK;
+      if(inMud && onGround){
+        mudSplashAccum += dt;
+        if(mudSplashAccum > 0.22){ mudSplashAccum = 0; spawnMudSplash(); }
       }
     }
 
@@ -1438,6 +1850,7 @@
         var combined = PLAYER_HALF_W + o.halfW;
         var lateralDist = Math.abs(playerX - o.mesh.position.x);
         var lateralOverlap = lateralDist < combined;
+        var struck = false;
         if(o.jumpable){
           // partial-width logs only block where they actually lie — step
           // outside their footprint (the open part of the road) and there's
@@ -1449,19 +1862,28 @@
               var hopT = 1 - Math.min(1, Math.abs(visZ) / (PLAYER_HALF_D + oHalfD));
               autoHopBoost = Math.max(autoHopBoost, Math.sin(Math.PI*hopT) * 0.55);
             } else if(playerY < o.clearHeight){
-              triggerCaught();
-              return;
+              struck = true;
             }
           }
         } else {
           if(lateralOverlap){
-            triggerCaught();
-            return;
-          }
-          if(o.canDazeBoar && !o.nearMissDone && lateralDist < combined + NEAR_MISS_MARGIN){
+            struck = true;
+          } else if(o.canDazeBoar && !o.nearMissDone && lateralDist < combined + NEAR_MISS_MARGIN && gameMode !== 'camp'){
             if(o.isHayBale){ triggerHayBaleNearMiss(o); }
             else { triggerObstacleNearMiss(o); }
           }
+        }
+        if(struck){
+          // no boar in camp mode, so a collision is a stumble costing time
+          // rather than the end of the run
+          if(gameMode === 'camp'){
+            world.remove(o.mesh);
+            obstacles.splice(i,1);
+            campStumble();
+            continue;
+          }
+          triggerCaught();
+          return;
         }
       }
     }
@@ -1484,11 +1906,15 @@
       if(pcZNear && Math.abs(playerX - pc.mesh.position.x) < (PLAYER_HALF_W + 0.35)){
         world.remove(pc.mesh);
         pinecones.splice(i,1);
-        pineconeCount++;
-        pineconeTotal++;
-        updatePineconeHUD();
-        if(pineconeCount >= PINECONE_THROW_COST && throwTimer <= 0){
-          triggerPineconeThrow();
+        if(gameMode === 'camp'){
+          campCollect(pc.kind);
+        } else {
+          pineconeCount++;
+          pineconeTotal++;
+          updatePineconeHUD();
+          if(pineconeCount >= PINECONE_THROW_COST && throwTimer <= 0){
+            triggerPineconeThrow();
+          }
         }
       }
     }
@@ -1521,13 +1947,33 @@
       }
     }
 
+    // camp mode runs against the clock instead of against the boar
+    if(gameMode === 'camp'){
+      if(campStumbleTimer > 0){ campStumbleTimer -= dt; }
+      campTimer -= dt;
+      updateCampClock();
+      if(campTimer <= 0){
+        campTimer = 0;
+        endRun();
+        return;
+      }
+      camera.position.x += (playerX*0.55 - camera.position.x) * Math.min(1, wdt*4);
+      camera.lookAt(camera.position.x*0.3, 1.1, -12);
+      zoneTag.textContent = zoneLabel(activeZone);
+      scoreVal.textContent = Math.floor(distance) + ' m';
+      updateDebugTag();
+      return;
+    }
+
     // boar catch-up (paused briefly while dazed after plowing into hay, or
     // during the pinecone-throw cutscene)
     if(boarDazedTimer > 0){
       boarDazedTimer -= dt;
       if(boarDazedTimer <= 0){ boarStarGroup.visible = false; }
     } else {
-      catchGap -= dt*0.045;
+      // the boar's short legs and low weight carry it over the bog better
+      // than the scout wades through it, so it closes in faster there
+      catchGap -= dt*(0.045 + mudBlend*0.16);
     }
     catchGap = Math.max(catchGap, -0.2);
     if(catchGap <= CATCH_THRESHOLD){
@@ -1554,7 +2000,7 @@
       boarHopY = Math.sin(Math.PI*Math.min(1,jt)) * 0.5;
     }
 
-    var boarSwimY = inWater ? -0.22 : 0;
+    var boarSwimY = inWater ? -0.22 : -mudBlend*MUD_SINK*0.7;
     boar.position.set(playerX*0.85, boarHopY + boarSwimY, PLAYER_VISUAL_Z + visualCatchGap(catchGap));
     boar.position.x += Math.sin(runPhase*0.7)*0.15;
     boar.rotation.z = (boarDazedTimer > 0) ? Math.sin(runPhase*3)*0.14 : 0;
@@ -1570,10 +2016,13 @@
     camera.lookAt(camera.position.x*0.3, 1.1, -12);
 
     // zone tag
-    zoneTag.textContent = activeZone === ZONE.FOREST ? 'las' : (activeZone === ZONE.FIELD ? 'pole' : 'rzeka');
+    zoneTag.textContent = zoneLabel(activeZone);
 
     scoreVal.textContent = Math.floor(distance) + ' m';
+    updateDebugTag();
+  }
 
+  function updateDebugTag(){
     if(controlMode === 'tilt'){
       debugTag.textContent = 'skręt: ' + (currentGamma - baselineGamma).toFixed(1) + '°  |  skok: ' + (currentBeta - baselineBeta).toFixed(1) + '°' + (onGround ? '' : ' (w locie)');
     } else {
