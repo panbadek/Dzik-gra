@@ -1266,6 +1266,16 @@
   var PURSUIT_MAX_GAP = 8.0;
   var PURSUIT_VISUAL_MAX = 4.2;
   var BOAR_SPEED_RATIO = 1.025;    // a shade faster than a cleanly running scout
+  // the boar is heavy: it builds speed gradually instead of matching the
+  // scout's stride the instant the scout finds another gear. While the scout
+  // is still accelerating the boar trails its own target and loses ground;
+  // once the scout tops out it reels that lag back in. Getting going again
+  // after a pinecone barrage is the same slow climb, from a standstill.
+  var BOAR_ACCEL = 0.6;
+  // it sheds speed far quicker than it builds it, so the bog still drags it
+  // down as sharply as it drags the scout down
+  var BOAR_DECEL = 3.0;
+  var boarSpeed = 0;
   var PURSUIT_PLAYER_Z = -1.7;     // scout set further up the frame, boar behind him
   var PURSUIT_STUMBLE_DURATION = 0.6;
   var PURSUIT_STUMBLE_SPEED = 0.68;
@@ -1488,6 +1498,7 @@
     runPhase = 0;
     playerY = 0; playerVY = 0; onGround = true;
     jumpArmed = true;
+    boarSpeed = baseSpeed * BOAR_SPEED_RATIO;
     player.position.set(0, 0, playerVisualZ());
     playerShadow.position.z = playerVisualZ();
     pursuitStumbleTimer = 0;
@@ -2016,11 +2027,17 @@
       if(boarDazedTimer <= 0){ boarStarGroup.visible = false; }
     }
     if(gameMode === 'pursuit'){
-      // the boar runs at its own speed: a shade quicker than a cleanly
-      // running scout, dragged down by the bog exactly as the scout is
-      // (scoutFullSpeed already carries the mud factor), and standing still
-      // while it's seeing stars
-      var boarSpeed = boarDazed ? 0 : scoutFullSpeed * BOAR_SPEED_RATIO;
+      // the boar runs at its own speed: it aims for a shade quicker than a
+      // cleanly running scout, dragged down by the bog exactly as the scout
+      // is (scoutFullSpeed already carries the mud factor), but it only
+      // works up to that target — and a hit drops it to a dead stop
+      if(boarDazed){
+        boarSpeed = 0;
+      } else {
+        var boarTarget = scoutFullSpeed * BOAR_SPEED_RATIO;
+        var boarRate = (boarTarget < boarSpeed) ? BOAR_DECEL : BOAR_ACCEL;
+        boarSpeed += (boarTarget - boarSpeed) * Math.min(1, wdt * boarRate);
+      }
       catchGap += (speed - boarSpeed) * wdt;
       catchGap = Math.min(catchGap, PURSUIT_MAX_GAP);
     } else if(!boarDazed){
