@@ -155,6 +155,7 @@
       <div class="choiceLabel">tryb gry</div>
       <div class="modeChoice">
         <button class="pick selected" id="modeChaseBtn">🐗 Ucieczka</button>
+        <button class="pick" id="modePursuitBtn">🏃 Pościg</button>
         <button class="pick" id="modeCampBtn">⛺ Życie na obozie</button>
       </div>
     </div>
@@ -217,6 +218,7 @@
   var startTouchBtn = document.getElementById('startTouchBtn');
   var modeChaseBtn = document.getElementById('modeChaseBtn');
   var modeCampBtn = document.getElementById('modeCampBtn');
+  var modePursuitBtn = document.getElementById('modePursuitBtn');
   var modeDesc = document.getElementById('modeDesc');
   var campTask = document.getElementById('campTask');
   var pineconeIcon = document.getElementById('pineconeIcon');
@@ -1148,7 +1150,7 @@
     spawnHayBurst(o.mesh.position.x, o.mesh.position.z);
     boarDazedTimer = BOAR_DAZE_DURATION;
     boarStarGroup.visible = true;
-    catchGap = Math.min(catchGap + 0.6, MAX_CATCH_GAP);
+    catchGap = Math.min(catchGap + 0.6, modeMaxGap());
   }
 
   // rock / fence: the boar plows straight into them and staggers, but unlike
@@ -1157,7 +1159,7 @@
     o.nearMissDone = true;
     boarDazedTimer = BOAR_DAZE_DURATION;
     boarStarGroup.visible = true;
-    catchGap = Math.min(catchGap + 0.6, MAX_CATCH_GAP);
+    catchGap = Math.min(catchGap + 0.6, modeMaxGap());
   }
 
   // ---------- INPUT / TILT CALIBRATION ----------
@@ -1254,6 +1256,20 @@
   var MAX_CATCH_GAP = 5.8;
   var CATCH_THRESHOLD = 0.35;
   var catchGap = BASE_CATCH_GAP;
+  // how hard the scout's stride ramps up with distance run
+  var SPEED_RAMP = 0.03;
+  var SPEED_RAMP_CAP = 4.5;
+
+  // pursuit mode: the boar runs at its own speed rather than being dragged
+  // along at a fixed distance, so the gap swings wide and has to read
+  // truthfully on screen
+  var PURSUIT_MAX_GAP = 8.0;
+  var PURSUIT_VISUAL_MAX = 4.2;
+  var BOAR_SPEED_RATIO = 1.025;    // a shade faster than a cleanly running scout
+  var PURSUIT_PLAYER_Z = -1.7;     // scout set further up the frame, boar behind him
+  var PURSUIT_STUMBLE_DURATION = 0.6;
+  var PURSUIT_STUMBLE_SPEED = 0.68;
+  var pursuitStumbleTimer = 0;
   var runPhase = 0;
   var clock = new THREE.Clock();
 
@@ -1262,10 +1278,20 @@
   // catchGap — farther away still reads as farther, just capped so he never
   // scrolls out of shot
   var BOAR_VISUAL_MAX = 3.4;
+  function modeMaxGap(){
+    return (gameMode === 'pursuit') ? PURSUIT_MAX_GAP : MAX_CATCH_GAP;
+  }
   function visualCatchGap(gap){
-    var t = (gap - CATCH_THRESHOLD) / (MAX_CATCH_GAP - CATCH_THRESHOLD);
+    var maxReal = (gameMode === 'pursuit') ? PURSUIT_MAX_GAP : MAX_CATCH_GAP;
+    var maxVis  = (gameMode === 'pursuit') ? PURSUIT_VISUAL_MAX : BOAR_VISUAL_MAX;
+    var t = (gap - CATCH_THRESHOLD) / (maxReal - CATCH_THRESHOLD);
     t = Math.max(0, Math.min(1, t));
-    return CATCH_THRESHOLD + t * (BOAR_VISUAL_MAX - CATCH_THRESHOLD);
+    return CATCH_THRESHOLD + t * (maxVis - CATCH_THRESHOLD);
+  }
+  // the scout stands further up the frame in pursuit mode, leaving room
+  // behind him for a gap that actually moves
+  function playerVisualZ(){
+    return (gameMode === 'pursuit') ? PURSUIT_PLAYER_Z : PLAYER_VISUAL_Z;
   }
 
   var playerY = 0, playerVY = 0, onGround = true;
@@ -1462,7 +1488,9 @@
     runPhase = 0;
     playerY = 0; playerVY = 0; onGround = true;
     jumpArmed = true;
-    player.position.set(0,0,PLAYER_VISUAL_Z);
+    player.position.set(0, 0, playerVisualZ());
+    playerShadow.position.z = playerVisualZ();
+    pursuitStumbleTimer = 0;
     player.rotation.x = 0;
     caughtTimer = 0;
     boarDazedTimer = 0;
@@ -1503,16 +1531,19 @@
 
   var MODE_DESC = {
     chase: 'Biegniesz przed siebie przez las, pola, bagna i rzeki, a dzik depcze ci po piętach. Wysokich przeszkód nie da się przeskoczyć — trzeba je wyminąć bokiem. Zbieraj szyszki leżące na ścieżce — po zebraniu 8 harcerz sam odwróci się i w zwolnionym tempie obrzuci nimi dzika. W rzece popłyniesz, a na bagnie ugrzęźniesz.',
+    pursuit: 'Harcerz biegnie dalej w kadrze, a dzik goni go własnym tempem — odrobinę szybszym niż jego, więc odległość realnie się kurczy i widać ją na ekranie. Na bagnie dzik grzęźnie tak samo jak harcerz. Szyszki zatrzymują go w miejscu i odrzucają na dystans startowy, a przeszkoda tylko przewraca harcerza (traci rozpęd) — grę kończy dopiero dogonienie przez dzika.',
     camp: 'Dzień na obozie: żadnego dzika, za to lista zadań i zegar. Zbieraj to, czego akurat potrzebuje obóz — drewno 🪵, wodę 🪣, prowiant 📦 i szyszki 🌰 — a każde wykonane zadanie dorzuca ' + CAMP_CHORE_BONUS + ' sekund. Uważaj: zderzenie z przeszkodą od razu kończy grę, tak samo jak koniec czasu.'
   };
 
   function selectGameMode(mode){
     gameMode = mode;
     modeChaseBtn.classList.toggle('selected', mode === 'chase');
+    modePursuitBtn.classList.toggle('selected', mode === 'pursuit');
     modeCampBtn.classList.toggle('selected', mode === 'camp');
     modeDesc.textContent = MODE_DESC[mode];
   }
   modeChaseBtn.addEventListener('click', function(){ selectGameMode('chase'); });
+  modePursuitBtn.addEventListener('click', function(){ selectGameMode('pursuit'); });
   modeCampBtn.addEventListener('click', function(){ selectGameMode('camp'); });
 
   startTiltBtn.addEventListener('click', function(){
@@ -1665,7 +1696,13 @@
     mudBlend += ((inMud ? 1 : 0) - mudBlend) * Math.min(1, dt*4);
 
     distance += speed*wdt;
-    speed = (baseSpeed + Math.min(distance*0.012, 4.5)) * (1 - mudBlend*(1 - MUD_SPEED_FACTOR));
+    // the scout's clean running speed, before any stumble — the boar paces
+    // itself off this, so tripping costs the scout ground rather than
+    // slowing his pursuer too
+    var scoutFullSpeed = (baseSpeed + Math.min(distance*SPEED_RAMP, SPEED_RAMP_CAP))
+                         * (1 - mudBlend*(1 - MUD_SPEED_FACTOR));
+    if(pursuitStumbleTimer > 0){ pursuitStumbleTimer -= dt; }
+    speed = scoutFullSpeed * (pursuitStumbleTimer > 0 ? PURSUIT_STUMBLE_SPEED : 1);
 
     // steering
     if(controlMode === 'tilt'){
@@ -1706,7 +1743,9 @@
           proj.hitApplied = true;
           scene.remove(proj.mesh);
           boarStarGroup.visible = true;
-          catchGap = Math.min(catchGap + 0.3, MAX_CATCH_GAP);
+          // a hit doesn't just nudge the boar back — it's driven all the way
+          // back to the distance it started the run at
+          catchGap = Math.max(catchGap, BASE_CATCH_GAP);
         }
       }
       if(throwTimer <= 0){
@@ -1841,7 +1880,9 @@
         continue;
       }
       var oHalfD = (o.halfD !== undefined) ? o.halfD : 0.4;
-      var zNear = Math.abs(visZ) < (PLAYER_HALF_D + oHalfD);
+      // the scout is drawn ahead of world-z 0, so an obstacle reaches him at
+      // his own z, not at the origin
+      var zNear = Math.abs(visZ - playerVisualZ()) < (PLAYER_HALF_D + oHalfD);
       if(zNear){
         var combined = PLAYER_HALF_W + o.halfW;
         var lateralDist = Math.abs(playerX - o.mesh.position.x);
@@ -1855,7 +1896,7 @@
             if(throwTimer > 0){
               // mid-throw cutscene: auto-clear low hurdles with a visual hop
               // instead of requiring the player to time a jump
-              var hopT = 1 - Math.min(1, Math.abs(visZ) / (PLAYER_HALF_D + oHalfD));
+              var hopT = 1 - Math.min(1, Math.abs(visZ - playerVisualZ()) / (PLAYER_HALF_D + oHalfD));
               autoHopBoost = Math.max(autoHopBoost, Math.sin(Math.PI*hopT) * 0.55);
             } else if(playerY < o.clearHeight){
               struck = true;
@@ -1875,6 +1916,15 @@
           if(gameMode === 'camp'){
             campCrash();
             return;
+          }
+          // in pursuit the boar is what ends the run, so an obstacle only
+          // trips the scout up and hands the boar the ground he loses
+          if(gameMode === 'pursuit'){
+            world.remove(o.mesh);
+            obstacles.splice(i,1);
+            pursuitStumbleTimer = PURSUIT_STUMBLE_DURATION;
+            spawnMudSplash();
+            continue;
           }
           triggerCaught();
           return;
@@ -1896,7 +1946,7 @@
       }
       pc.mesh.rotation.y += dt*2.2;
       pc.mesh.position.y = Math.sin(runPhase*0.6 + pc.localZ)*0.05;
-      var pcZNear = Math.abs(pcVisZ) < (PLAYER_HALF_D + 0.35);
+      var pcZNear = Math.abs(pcVisZ - playerVisualZ()) < (PLAYER_HALF_D + 0.35);
       if(pcZNear && Math.abs(playerX - pc.mesh.position.x) < (PLAYER_HALF_W + 0.35)){
         world.remove(pc.mesh);
         pinecones.splice(i,1);
@@ -1958,14 +2008,24 @@
       return;
     }
 
-    // boar catch-up (paused briefly while dazed after plowing into hay, or
-    // during the pinecone-throw cutscene)
-    if(boarDazedTimer > 0){
+    // boar catch-up. Dazed means it has been hit — by a pinecone barrage, or
+    // by plowing into an obstacle — and it stops dead for that moment.
+    var boarDazed = boarDazedTimer > 0;
+    if(boarDazed){
       boarDazedTimer -= dt;
       if(boarDazedTimer <= 0){ boarStarGroup.visible = false; }
-    } else {
-      // the boar's short legs and low weight carry it over the bog better
-      // than the scout wades through it, so it closes in faster there
+    }
+    if(gameMode === 'pursuit'){
+      // the boar runs at its own speed: a shade quicker than a cleanly
+      // running scout, dragged down by the bog exactly as the scout is
+      // (scoutFullSpeed already carries the mud factor), and standing still
+      // while it's seeing stars
+      var boarSpeed = boarDazed ? 0 : scoutFullSpeed * BOAR_SPEED_RATIO;
+      catchGap += (speed - boarSpeed) * wdt;
+      catchGap = Math.min(catchGap, PURSUIT_MAX_GAP);
+    } else if(!boarDazed){
+      // classic chase: the boar is towed along at a near-fixed distance that
+      // creeps in slowly, faster over the bog where the scout wades
       catchGap -= dt*(0.045 + mudBlend*0.16);
     }
     catchGap = Math.max(catchGap, -0.2);
@@ -1976,11 +2036,12 @@
 
     // boar hops over any jumpable hurdle it is currently passing
     if(boarJumpTimer <= 0){
+      var boarZ = playerVisualZ() + visualCatchGap(catchGap);
       for(var bk=0;bk<obstacles.length;bk++){
         var bo = obstacles[bk];
         if(!bo.jumpable) continue;
         var boVisZ = bo.localZ + worldZ;
-        if(boVisZ > catchGap - 0.5 && boVisZ < catchGap + 1.0){
+        if(boVisZ > boarZ - 0.5 && boVisZ < boarZ + 1.0){
           boarJumpTimer = BOAR_JUMP_DURATION;
           break;
         }
@@ -1994,7 +2055,7 @@
     }
 
     var boarSwimY = inWater ? -0.22 : -mudBlend*MUD_SINK*0.7;
-    boar.position.set(playerX*0.85, boarHopY + boarSwimY, PLAYER_VISUAL_Z + visualCatchGap(catchGap));
+    boar.position.set(playerX*0.85, boarHopY + boarSwimY, playerVisualZ() + visualCatchGap(catchGap));
     boar.position.x += Math.sin(runPhase*0.7)*0.15;
     boar.rotation.z = (boarDazedTimer > 0) ? Math.sin(runPhase*3)*0.14 : 0;
     if(boarStarGroup.visible){
@@ -2032,8 +2093,8 @@
     // boar lunges the rest of the way to the player, low and fast — starts
     // from a visually-capped distance so the lunge is never off-screen, and
     // ends exactly at the player's own (nudged-back) position
-    var gap = Math.min(caughtGapStart, BOAR_VISUAL_MAX) * (1 - lunge);
-    boar.position.set(playerX*0.85 + Math.sin(runPhase*0.7)*0.15*(1-lunge), 0, PLAYER_VISUAL_Z + gap);
+    var gap = Math.min(caughtGapStart, (gameMode === 'pursuit') ? PURSUIT_VISUAL_MAX : BOAR_VISUAL_MAX) * (1 - lunge);
+    boar.position.set(playerX*0.85 + Math.sin(runPhase*0.7)*0.15*(1-lunge), 0, playerVisualZ() + gap);
     boar.rotation.z = 0;
     boarLegs.forEach(function(leg, idx){
       leg.rotation.x = Math.sin(runPhase*2.2 + idx*Math.PI/2)*0.6;
