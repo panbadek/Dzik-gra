@@ -477,12 +477,12 @@
     m.position.y = 0.5;
     return { mesh:m, halfW:0.3, halfD:0.3, jumpable:false, canDazeBoar:true };
   }
-  // three logs stacked in a pile (2 on the bottom, 1 nested on top) —
-  // also unmistakably a dodge-only obstacle
+  // three logs stacked in a pile (2 on the bottom, 1 nested on top) — lying
+  // logs, so like every other lying log it can be hopped, just higher
   function makeLogPileObstacle(){
     var mat = new THREE.MeshLambertMaterial({ color:0x5a3c22 });
     var g = new THREE.Group();
-    var logR = 0.24, logLen = 0.85;
+    var logR = 0.21, logLen = 0.85;
     function oneLog(x,y){
       var m = new THREE.Mesh(new THREE.CylinderGeometry(logR,logR,logLen,8), mat);
       m.rotation.z = Math.PI/2;
@@ -492,10 +492,11 @@
     g.add(oneLog(-logR*0.95, logR));
     g.add(oneLog(logR*0.95, logR));
     g.add(oneLog(0, logR*2.75));
-    return { mesh:g, halfW:logLen/2, halfD:0.32, jumpable:false, canDazeBoar:true };
+    // top of the stack sits at logR*3.75 — well inside the jump arc
+    return { mesh:g, halfW:logLen/2, halfD:0.32, jumpable:true, clearHeight:0.79 };
   }
-  // a tree fallen across only half the path — the other half stays clear,
-  // but it's too wide (and lying flat and heavy) to jump, so it must be dodged
+  // a tree fallen across only half the path — the other half stays clear, so
+  // it can be dodged, and being a lying log it can equally well be jumped
   function makeFallenTreeHalf(side){
     var mat = new THREE.MeshLambertMaterial({ color:0x5a3d24 });
     var L = LANE_HALF*1.2;
@@ -511,7 +512,7 @@
       br.rotation.z = 0.6;
       m.add(br);
     }
-    return { mesh:m, halfW:L/2, halfD:0.32, jumpable:false, fixedX:true };
+    return { mesh:m, halfW:L/2, halfD:0.32, jumpable:true, clearHeight:0.7, fixedX:true };
   }
   // a standing tree trunk placed mid-lane — must be dodged like a rock
   function makeStandingTreeObstacle(){
@@ -792,10 +793,9 @@
             picked = makeRockObstacle();
           }
         } else if(zone === ZONE.SWAMP){
-          var swampRoll = Math.random();
-          if(swampRoll < 0.4){ picked = makeVerticalLogObstacle(); }
-          else if(swampRoll < 0.7){ picked = makeLogPileObstacle(); }
-          else { picked = makeRockObstacle(); }
+          // only dodge-around obstacles here: mud robs the jump of its
+          // height, so anything jumpable would be an unavoidable trap
+          picked = (Math.random() < 0.5) ? makeVerticalLogObstacle() : makeRockObstacle();
         } else {
           picked = Math.random()<0.5 ? makeHayBaleObstacle() : makeFenceObstacle();
         }
@@ -815,7 +815,9 @@
         localZ: oz
       });
       lastObstacleZ = oz;
-      lastObstacleWasHurdle = wantHurdle;
+      // fallen trees and log piles are jumpable too, so they earn the wider
+      // hurdle spacing before whatever comes next
+      lastObstacleWasHurdle = wantHurdle || !!picked.jumpable;
     }
 
     frontierZ -= CHUNK_LEN;
@@ -890,54 +892,52 @@
     scarfKnot.position.set(0, 0.6, -0.21);
     pHip.add(scarfKnot);
 
-    // triangular neckerchief, apex hanging down, two black stripes
-    // converging toward the tip along its edges
-    var scarfW = 0.14, scarfH = 0.34;
+    // Triangular neckerchief hanging apex-down. Half-width equals height, so
+    // the tip is a right angle and the two outer black stripes meet there at
+    // exactly 90°.
+    var scarfH = 0.20;        // apex-to-collar height
+    var scarfW = scarfH;      // half-width == height  =>  90° apex
+    var scarfBaseY = 0.42;    // apex sits here; the top edge reaches the collar
+    var SCARF_Z = -0.2;
+
     var scarfShape = new THREE.Shape();
     scarfShape.moveTo(-scarfW, scarfH);
     scarfShape.lineTo(scarfW, scarfH);
     scarfShape.lineTo(0, 0);
     scarfShape.lineTo(-scarfW, scarfH);
-    var scarfGeo = new THREE.ShapeGeometry(scarfShape);
-    var scarfBodyMat = new THREE.MeshLambertMaterial({ color:0x35606a, side: THREE.DoubleSide });
-    var scarfBody = new THREE.Mesh(scarfGeo, scarfBodyMat);
-    scarfBody.position.set(0, 0.28, -0.2);
+    var scarfBody = new THREE.Mesh(
+      new THREE.ShapeGeometry(scarfShape),
+      new THREE.MeshLambertMaterial({ color:0x35606a, side: THREE.DoubleSide })
+    );
+    scarfBody.position.set(0, scarfBaseY, SCARF_Z);
     pHip.add(scarfBody);
 
-    // each edge gets a pair of thin parallel pinstripes (not just one),
-    // matching the reference photo's double-line trim
+    // Trim running up both edges: black / green / black. Each band is a quad
+    // cut off at the vertical bisector, so the halves mitre together at the
+    // tip instead of crossing, and the outer pair keeps the full 90° corner.
     var scarfStripeMat = new THREE.MeshLambertMaterial({ color:0x111111, side: THREE.DoubleSide });
-    var edgeDX = 0 - (-scarfW), edgeDY = 0 - scarfH;
-    var edgeLen = Math.sqrt(edgeDX*edgeDX + edgeDY*edgeDY);
-    var edgeAngle = Math.atan2(-edgeDX, edgeDY);
-    var perpX = -edgeDY/edgeLen, perpY = edgeDX/edgeLen; // unit perpendicular to the edge
-    var midY = 0.28 + scarfH/2;
-    var stripeOffsets = [-0.022, 0.022];
-
-    // the channel between each pair of black stripes is filled green, so the
-    // trim reads as a green band framed by two dark lines
-    var scarfGreenMat = new THREE.MeshLambertMaterial({ color:0x2f7d32, side: THREE.DoubleSide });
-    var greenW = (stripeOffsets[1] - stripeOffsets[0]) - 0.02 + 0.004; // gap between the stripe inner edges
-    var greenLeft = new THREE.Mesh(new THREE.BoxGeometry(greenW, edgeLen*0.82, 0.014), scarfGreenMat);
-    greenLeft.position.set(-scarfW/2, midY, -0.208);
-    greenLeft.rotation.z = edgeAngle;
-    pHip.add(greenLeft);
-
-    var greenRight = new THREE.Mesh(new THREE.BoxGeometry(greenW, edgeLen*0.82, 0.014), scarfGreenMat);
-    greenRight.position.set(scarfW/2, midY, -0.208);
-    greenRight.rotation.z = -edgeAngle;
-    pHip.add(greenRight);
-
-    stripeOffsets.forEach(function(off){
-      var left = new THREE.Mesh(new THREE.BoxGeometry(0.02, edgeLen*0.82, 0.015), scarfStripeMat);
-      left.position.set(-scarfW/2 + perpX*off, midY + perpY*off, -0.212);
-      left.rotation.z = edgeAngle;
-      pHip.add(left);
-
-      var right = new THREE.Mesh(new THREE.BoxGeometry(0.02, edgeLen*0.82, 0.015), scarfStripeMat);
-      right.position.set(scarfW/2 - perpX*off, midY + perpY*off, -0.212);
-      right.rotation.z = -edgeAngle;
-      pHip.add(right);
+    var scarfGreenMat  = new THREE.MeshLambertMaterial({ color:0x2f7d32, side: THREE.DoubleSide });
+    // `t` raises a band's inner apex along the bisector; its perpendicular
+    // width is t / sqrt(2)
+    var tBlack = 0.02 * Math.SQRT2;
+    var tGreen = 0.026 * Math.SQRT2;
+    var scarfBands = [
+      { from: 0,                   to: tBlack,                   mat: scarfStripeMat },
+      { from: tBlack,              to: tBlack + tGreen,          mat: scarfGreenMat  },
+      { from: tBlack + tGreen,     to: tBlack*2 + tGreen,        mat: scarfStripeMat }
+    ];
+    scarfBands.forEach(function(band){
+      [-1, 1].forEach(function(side){
+        var bs = new THREE.Shape();
+        bs.moveTo(0, band.from);
+        bs.lineTo(side*(scarfH - band.from), scarfH);
+        bs.lineTo(side*(scarfH - band.to), scarfH);
+        bs.lineTo(0, band.to);
+        bs.lineTo(0, band.from);
+        var bm = new THREE.Mesh(new THREE.ShapeGeometry(bs), band.mat);
+        bm.position.set(0, scarfBaseY, SCARF_Z - 0.006);
+        pHip.add(bm);
+      });
     });
 
     var head = new THREE.Mesh(new THREE.SphereGeometry(0.22,10,8), skin);
@@ -1305,8 +1305,6 @@
   var CAMP_START_TIME = 45;
   var CAMP_CHORE_BONUS = 14;
   var CAMP_PICKUP_BONUS = 1;
-  var CAMP_OBSTACLE_PENALTY = 4;
-  var CAMP_STUMBLE_DURATION = 0.7;
 
   var CAMP_CHORES = [
     { item:'wood',  need:3, text:'Nazbieraj drewna na ognisko' },
@@ -1323,7 +1321,7 @@
   var campChoreIndex = 0;
   var campChoreProgress = 0;
   var campChoresDone = 0;
-  var campStumbleTimer = 0;
+  var campFailedOnObstacle = false; // ended by a collision rather than the clock
 
   // the list loops, asking for one more of everything on each full lap
   function currentChore(){
@@ -1371,12 +1369,10 @@
     updateCampHUD();
   }
 
-  function campStumble(){
-    campTimer -= CAMP_OBSTACLE_PENALTY;
-    campStumbleTimer = CAMP_STUMBLE_DURATION;
-    spawnMudSplash();
-    showToast('Potknięcie! −' + CAMP_OBSTACLE_PENALTY + ' s', 1400);
-    updateCampHUD();
+  // a collision in camp mode ends the day outright, same as being caught
+  function campCrash(){
+    campFailedOnObstacle = true;
+    endRun();
   }
 
   // swamp wading: the bog drags the scout down, slows his stride, makes
@@ -1453,7 +1449,7 @@
     campChoreIndex = 0;
     campChoreProgress = 0;
     campChoresDone = 0;
-    campStumbleTimer = 0;
+    campFailedOnObstacle = false;
     campClockShown = -1;
     boar.visible = (gameMode !== 'camp');
     applyModeHUD();
@@ -1507,7 +1503,7 @@
 
   var MODE_DESC = {
     chase: 'Biegniesz przed siebie przez las, pola, bagna i rzeki, a dzik depcze ci po piętach. Wysokich przeszkód nie da się przeskoczyć — trzeba je wyminąć bokiem. Zbieraj szyszki leżące na ścieżce — po zebraniu 8 harcerz sam odwróci się i w zwolnionym tempie obrzuci nimi dzika. W rzece popłyniesz, a na bagnie ugrzęźniesz.',
-    camp: 'Dzień na obozie: żadnego dzika, za to lista zadań i zegar. Zbieraj to, czego akurat potrzebuje obóz — drewno 🪵, wodę 🪣, prowiant 📦 i szyszki 🌰 — a każde wykonane zadanie dorzuca ' + CAMP_CHORE_BONUS + ' sekund. Potknięcie o przeszkodę kosztuje ' + CAMP_OBSTACLE_PENALTY + ' sekundy. Gra kończy się, gdy skończy się czas.'
+    camp: 'Dzień na obozie: żadnego dzika, za to lista zadań i zegar. Zbieraj to, czego akurat potrzebuje obóz — drewno 🪵, wodę 🪣, prowiant 📦 i szyszki 🌰 — a każde wykonane zadanie dorzuca ' + CAMP_CHORE_BONUS + ' sekund. Uważaj: zderzenie z przeszkodą od razu kończy grę, tak samo jak koniec czasu.'
   };
 
   function selectGameMode(mode){
@@ -1623,7 +1619,9 @@
         BEST_CAMP = campChoresDone;
         try{ localStorage.setItem('dzik3d_best_camp', String(BEST_CAMP)); }catch(e){}
       }
-      caughtBadge.textContent = '⛺ czas minął — koniec dnia';
+      caughtBadge.textContent = campFailedOnObstacle
+        ? '⛺ wpadłeś na przeszkodę'
+        : '⛺ czas minął — koniec dnia';
       overTitle.textContent = 'Koniec dnia na obozie';
       finalScore.textContent = campChoresDone;
       finalScoreLabel.textContent = 'zadania';
@@ -1668,8 +1666,6 @@
 
     distance += speed*wdt;
     speed = (baseSpeed + Math.min(distance*0.012, 4.5)) * (1 - mudBlend*(1 - MUD_SPEED_FACTOR));
-    // picking yourself up after a camp-mode stumble costs momentum too
-    if(campStumbleTimer > 0){ speed *= 0.45; }
 
     // steering
     if(controlMode === 'tilt'){
@@ -1874,13 +1870,11 @@
           }
         }
         if(struck){
-          // no boar in camp mode, so a collision is a stumble costing time
-          // rather than the end of the run
+          // no boar to catch him in camp mode, but a collision still ends the
+          // run — there it's the obstacle itself that finishes the day
           if(gameMode === 'camp'){
-            world.remove(o.mesh);
-            obstacles.splice(i,1);
-            campStumble();
-            continue;
+            campCrash();
+            return;
           }
           triggerCaught();
           return;
@@ -1949,7 +1943,6 @@
 
     // camp mode runs against the clock instead of against the boar
     if(gameMode === 'camp'){
-      if(campStumbleTimer > 0){ campStumbleTimer -= dt; }
       campTimer -= dt;
       updateCampClock();
       if(campTimer <= 0){
