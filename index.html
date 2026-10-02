@@ -135,6 +135,37 @@
   .score-line .l{ font-size:11px; opacity:.7; }
   .countdown{ font-size:80px; font-weight:800; color:var(--accent); text-shadow:0 4px 20px rgba(0,0,0,.5); }
   .hidden{ display:none !important; }
+
+  /* nickname entry + the score table */
+  .nickRow{ display:flex; gap:10px; align-items:center; justify-content:center; flex-wrap:wrap; }
+  .nickShow{ font-size:14px; font-weight:700; color:var(--cream); opacity:.9; }
+  .nickShow.unset{ opacity:.45; font-weight:400; font-style:italic; }
+  .nickInput{
+    width:min(240px,70vw); margin-top:8px; padding:11px 14px;
+    font-family:inherit; font-size:16px; font-weight:700; text-align:center;
+    color:var(--ink); background:var(--cream);
+    border:none; border-radius:10px; outline:none;
+    -webkit-user-select:text; user-select:text;
+  }
+  .boardWrap{ width:min(330px,88vw); display:flex; flex-direction:column; gap:8px; align-items:center; }
+  .boardTitle{ font-size:11px; letter-spacing:1.4px; text-transform:uppercase; opacity:.5; }
+  .boardTabs{ display:flex; gap:6px; justify-content:center; flex-wrap:wrap; }
+  .boardTabs .pick{ padding:7px 11px; font-size:12px; }
+  .board{
+    list-style:none; margin:0; padding:0; width:100%;
+    display:flex; flex-direction:column; gap:3px;
+  }
+  .board li{
+    display:flex; align-items:baseline; gap:8px;
+    padding:6px 11px; border-radius:8px;
+    background:rgba(0,0,0,.26); font-size:14px;
+  }
+  .board li .pos{ width:20px; opacity:.5; font-size:12px; flex:none; }
+  .board li .who{ flex:1; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:left; }
+  .board li .pts{ font-weight:800; color:var(--accent); flex:none; }
+  .board li.me{ background:rgba(232,150,60,.22); border:1px solid rgba(232,150,60,.5); }
+  .boardEmpty{ font-size:12.5px; opacity:.5; padding:6px 0; }
+  .boardHint{ font-size:12px; opacity:.6; }
   .modeNote{ font-size:11.5px; opacity:.55; margin-top:2px; }
   .debugTag{
     position:absolute;
@@ -198,6 +229,16 @@
       </div>
     </div>
 
+    <div class="choiceGroup">
+      <div class="choiceLabel">gracz</div>
+      <div class="nickRow">
+        <span class="nickShow" id="nickShow">bez nicku</span>
+        <button class="pick" id="nickBtn">✏️ Dodaj nick</button>
+        <button class="pick" id="boardBtn">🏆 Wyniki</button>
+      </div>
+      <input class="nickInput hidden" id="nickInput" maxlength="12" placeholder="Twój nick" autocomplete="off" autocapitalize="off" spellcheck="false">
+    </div>
+
     <div class="modeNote" id="supportNote"></div>
     <div class="modeNote">Jeśli grasz z podglądu w aplikacji Claude, otwórz ten link wprost w przeglądarce telefonu (Chrome/Safari) — osadzony podgląd czasem blokuje czujnik przechyłu.</div>
   </div>
@@ -248,6 +289,20 @@
     <button class="btn" id="calibrateBtn">Stuknij, aby skalibrować</button>
   </div>
 
+  <div class="overlay hidden" id="boardScreen">
+    <div class="badge">🏆 tabela wyników</div>
+    <h1>Najlepsi</h1>
+    <div class="boardWrap">
+      <div class="boardTabs">
+        <button class="pick selected" data-board="chase">🐗 Ucieczka</button>
+        <button class="pick" data-board="pursuit">🏃 Pościg</button>
+        <button class="pick" data-board="camp">⛺ Obóz</button>
+      </div>
+      <ol class="board" id="boardAll"></ol>
+    </div>
+    <button class="btn" id="boardCloseBtn">Wróć</button>
+  </div>
+
   <div class="overlay hidden" id="countdownScreen">
     <div class="countdown" id="countdownVal">3</div>
     <p>Lewo/prawo — skręcasz. Pochyl telefon do przodu lub do tyłu — skaczesz, a w rzece wynurzasz się.</p>
@@ -261,6 +316,16 @@
       <div><div class="n" id="finalBest">0 m</div><div class="l" id="finalBestLabel">rekord</div></div>
       <div><div class="n" id="finalPinecones">0</div><div class="l" id="finalPineconesLabel">szyszki</div></div>
     </div>
+    <div class="boardWrap">
+      <div class="boardTitle" id="boardTitle">najlepsze wyniki</div>
+      <ol class="board" id="board"></ol>
+      <div class="nickRow hidden" id="overNickRow">
+        <span class="boardHint">wpisz nick, żeby zapisać wynik</span>
+        <button class="pick" id="overNickBtn">✏️ Dodaj nick</button>
+      </div>
+      <input class="nickInput hidden" id="overNickInput" maxlength="12" placeholder="Twój nick" autocomplete="off" autocapitalize="off" spellcheck="false">
+    </div>
+
     <button class="btn" id="retryBtn">Jeszcze raz</button>
     <button class="btn secondary" id="changeModeBtn">Zmień tryb / sterowanie</button>
     <button class="btn secondary" id="recalibrateBtn">Skalibruj ponownie</button>
@@ -297,6 +362,18 @@
   var finalScoreLabel = document.getElementById('finalScoreLabel');
   var finalBestLabel = document.getElementById('finalBestLabel');
   var finalPineconesLabel = document.getElementById('finalPineconesLabel');
+  var nickShow = document.getElementById('nickShow');
+  var nickBtn = document.getElementById('nickBtn');
+  var nickInput = document.getElementById('nickInput');
+  var boardBtn = document.getElementById('boardBtn');
+  var boardScreen = document.getElementById('boardScreen');
+  var boardCloseBtn = document.getElementById('boardCloseBtn');
+  var boardAll = document.getElementById('boardAll');
+  var boardEl = document.getElementById('board');
+  var boardTitle = document.getElementById('boardTitle');
+  var overNickRow = document.getElementById('overNickRow');
+  var overNickBtn = document.getElementById('overNickBtn');
+  var overNickInput = document.getElementById('overNickInput');
   var calibrateBtn = document.getElementById('calibrateBtn');
   var retryBtn = document.getElementById('retryBtn');
   var recalibrateBtn = document.getElementById('recalibrateBtn');
@@ -308,6 +385,140 @@
   var supportNote = document.getElementById('supportNote');
   var debugTag = document.getElementById('debugTag');
   var liveGammaNote = document.getElementById('liveGammaNote');
+
+
+  // ---------- NICKNAME + SCORE TABLE ----------
+  // Everything lives in this browser's localStorage: no server behind the
+  // game, so the table is this device's. That suits a phone handed round a
+  // group — each player types their nick and their best run is kept.
+  var NICK_KEY = 'dzik3d_nick';
+  var BOARD_LIMIT = 10;
+  var playerNick = '';
+  try{ playerNick = localStorage.getItem(NICK_KEY) || ''; }catch(e){ playerNick = ''; }
+
+  // a run that finished before a nick was set, waiting to be claimed
+  var pendingScore = null;
+
+  function boardKey(mode){ return 'dzik3d_board_' + mode; }
+  function loadBoard(mode){
+    try{
+      var rows = JSON.parse(localStorage.getItem(boardKey(mode)) || '[]');
+      return Array.isArray(rows) ? rows : [];
+    }catch(e){ return []; }
+  }
+  function storeBoard(mode, rows){
+    try{ localStorage.setItem(boardKey(mode), JSON.stringify(rows.slice(0, BOARD_LIMIT))); }catch(e){}
+  }
+  function scoreSuffix(mode){ return (mode === 'camp') ? ' zad.' : ' m'; }
+  function boardLabel(mode){
+    if(mode === 'camp') return 'najlepsi na obozie';
+    if(mode === 'pursuit') return 'najlepsi w pościgu';
+    return 'najlepsi w ucieczce';
+  }
+
+  // one row per nick — their best run — so the table reads as a list of
+  // players rather than one person's run history
+  function recordScore(mode, nick, score){
+    var rows = loadBoard(mode);
+    var mine = null;
+    for(var i=0;i<rows.length;i++){
+      if(rows[i].nick === nick){ mine = rows[i]; break; }
+    }
+    if(mine){ mine.score = Math.max(mine.score, score); }
+    else { rows.push({ nick: nick, score: score }); }
+    rows.sort(function(a,b){ return b.score - a.score; });
+    rows = rows.slice(0, BOARD_LIMIT);
+    storeBoard(mode, rows);
+    for(var j=0;j<rows.length;j++){
+      if(rows[j].nick === nick) return j;   // -1 if they didn't make the cut
+    }
+    return -1;
+  }
+
+  function renderBoard(listEl, mode, highlightIdx){
+    var rows = loadBoard(mode);
+    listEl.innerHTML = '';
+    if(!rows.length){
+      var empty = document.createElement('li');
+      empty.className = 'boardEmpty';
+      empty.textContent = 'Jeszcze nikt tu nie biegał.';
+      listEl.appendChild(empty);
+      return;
+    }
+    rows.forEach(function(r, i){
+      var li = document.createElement('li');
+      if(i === highlightIdx) li.className = 'me';
+      var pos = document.createElement('span');
+      pos.className = 'pos'; pos.textContent = (i+1) + '.';
+      var who = document.createElement('span');
+      who.className = 'who'; who.textContent = r.nick;
+      var pts = document.createElement('span');
+      pts.className = 'pts'; pts.textContent = r.score + scoreSuffix(mode);
+      li.appendChild(pos); li.appendChild(who); li.appendChild(pts);
+      listEl.appendChild(li);
+    });
+  }
+
+  function showNick(){
+    nickShow.textContent = playerNick || 'bez nicku';
+    nickShow.classList.toggle('unset', !playerNick);
+    nickBtn.textContent = playerNick ? '✏️ Zmień nick' : '✏️ Dodaj nick';
+  }
+  showNick();
+
+  // the button's whole job is to put the keyboard up, so the input is
+  // revealed and focused inside the click itself — browsers only raise the
+  // on-screen keyboard for a focus that comes from a real user gesture
+  function openNickInput(inputEl){
+    inputEl.classList.remove('hidden');
+    inputEl.value = playerNick;
+    inputEl.focus();
+    try{ inputEl.setSelectionRange(0, inputEl.value.length); }catch(e){}
+  }
+  function commitNick(inputEl){
+    var v = (inputEl.value || '').trim().slice(0, 12);
+    inputEl.classList.add('hidden');
+    if(!v) return;
+    playerNick = v;
+    try{ localStorage.setItem(NICK_KEY, playerNick); }catch(e){}
+    showNick();
+    // a run that ended before the nick existed now gets its owner
+    if(pendingScore){
+      var idx = recordScore(pendingScore.mode, playerNick, pendingScore.score);
+      renderBoard(boardEl, pendingScore.mode, idx);
+      overNickRow.classList.add('hidden');
+      pendingScore = null;
+    }
+  }
+  function wireNick(btn, inputEl){
+    btn.addEventListener('click', function(){ openNickInput(inputEl); });
+    inputEl.addEventListener('keydown', function(e){
+      if(e.key === 'Enter'){ e.preventDefault(); inputEl.blur(); }
+    });
+    inputEl.addEventListener('blur', function(){ commitNick(inputEl); });
+  }
+  wireNick(nickBtn, nickInput);
+  wireNick(overNickBtn, overNickInput);
+
+  var boardTab = 'chase';
+  boardBtn.addEventListener('click', function(){
+    startScreen.classList.add('hidden');
+    boardScreen.classList.remove('hidden');
+    renderBoard(boardAll, boardTab, -1);
+  });
+  boardCloseBtn.addEventListener('click', function(){
+    boardScreen.classList.add('hidden');
+    startScreen.classList.remove('hidden');
+  });
+  Array.prototype.forEach.call(boardScreen.querySelectorAll('.boardTabs .pick'), function(tab){
+    tab.addEventListener('click', function(){
+      boardTab = tab.getAttribute('data-board');
+      Array.prototype.forEach.call(boardScreen.querySelectorAll('.boardTabs .pick'), function(t){
+        t.classList.toggle('selected', t === tab);
+      });
+      renderBoard(boardAll, boardTab, -1);
+    });
+  });
 
   function showToast(msg, ms){
     var el = document.createElement('div');
@@ -1755,6 +1966,21 @@
       finalPineconesLabel.textContent = 'szyszki';
       bestVal.textContent = BEST + ' m';
     }
+    // file the run on this device's score table, or, with no nick yet, hold
+    // it until one is typed on this very screen
+    var runScore = (gameMode === 'camp') ? campChoresDone : meters;
+    boardTitle.textContent = boardLabel(gameMode);
+    if(playerNick){
+      pendingScore = null;
+      overNickRow.classList.add('hidden');
+      renderBoard(boardEl, gameMode, recordScore(gameMode, playerNick, runScore));
+    } else {
+      pendingScore = { mode: gameMode, score: runScore };
+      overNickRow.classList.remove('hidden');
+      renderBoard(boardEl, gameMode, -1);
+    }
+    overNickInput.classList.add('hidden');
+
     setTimeout(function(){ overScreen.classList.remove('hidden'); }, 300);
   }
 
