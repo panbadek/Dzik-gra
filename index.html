@@ -75,6 +75,36 @@
     margin-top:0; padding:10px 22px; font-size:14px;
   }
   .tiltIcon{ font-size:44px; }
+
+  /* illustrated gyroscope guide: two little phones that actually rock, so the
+     motion is shown rather than described */
+  .tiltGuide{ display:flex; gap:14px; justify-content:center; flex-wrap:wrap; }
+  .tiltCard{
+    margin:0; display:flex; flex-direction:column; align-items:center; gap:6px;
+    background:rgba(0,0,0,.22); border:1px solid rgba(242,233,216,.14);
+    border-radius:14px; padding:10px 12px 9px;
+  }
+  .tiltCard svg{ width:92px; height:86px; display:block; color:var(--accent); overflow:visible; }
+  .tiltCard .body{ fill:#243726; stroke:var(--cream); stroke-width:2.6; }
+  .tiltCard .screen{ fill:rgba(242,233,216,.17); }
+  .tiltCard .dot{ fill:rgba(242,233,216,.5); }
+  .tiltCard .edge{ stroke:var(--accent); stroke-width:2.4; stroke-linecap:round; }
+  /* the player's head, so "toward you / away from you" has a reference point */
+  .tiltCard .face{ fill:none; stroke:rgba(242,233,216,.45); stroke-width:2.2; stroke-linecap:round; }
+  .tiltCard .axis{ stroke:rgba(242,233,216,.22); stroke-width:1.5; stroke-dasharray:4 4; }
+  .tiltCard .swing{ fill:none; stroke:var(--accent); stroke-width:2.6; stroke-linecap:round; }
+  .tiltCard figcaption{ text-align:center; line-height:1.3; }
+  .tiltCard figcaption b{ display:block; font-size:12.5px; color:var(--accent); }
+  .tiltCard figcaption span{ display:block; font-size:10.5px; opacity:.68; }
+  .tiltCard .rock{ transform-box:fill-box; transform-origin:center; }
+  .rockLR{ animation:tiltLR 2.8s ease-in-out infinite; }
+  .rockFB{ animation:tiltFB 2.8s ease-in-out infinite; }
+  @keyframes tiltLR{ 0%,100%{ transform:rotate(-19deg); } 50%{ transform:rotate(19deg); } }
+  @keyframes tiltFB{ 0%,100%{ transform:rotate(-15deg); } 50%{ transform:rotate(15deg); } }
+  @media (prefers-reduced-motion: reduce){
+    .rockLR{ animation:none; transform:rotate(-19deg); }
+    .rockFB{ animation:none; transform:rotate(15deg); }
+  }
   .modeChoice{ display:flex; gap:12px; justify-content:center; flex-wrap:wrap; margin-top:2px; }
   .modeChoice .btn{ margin-top:0; padding:12px 20px; font-size:15px; }
   .choiceGroup{ display:flex; flex-direction:column; align-items:center; gap:6px; }
@@ -173,7 +203,45 @@
   </div>
 
   <div class="overlay hidden" id="calibrateScreen">
-    <div class="tiltIcon">📱</div>
+    <div class="tiltGuide">
+      <figure class="tiltCard">
+        <svg viewBox="0 0 120 112" role="img" aria-label="Przechyl telefon w lewo albo w prawo, żeby skręcać">
+          <defs>
+            <marker id="ahL" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+            </marker>
+          </defs>
+          <line class="axis" x1="60" y1="8" x2="60" y2="104"/>
+          <g transform="translate(60,52)"><g class="rock rockLR">
+            <rect class="body" x="-21" y="-34" width="42" height="68" rx="8"/>
+            <rect class="screen" x="-16" y="-28" width="32" height="50" rx="3"/>
+            <circle class="dot" cx="0" cy="28" r="2.8"/>
+          </g></g>
+          <path class="swing" d="M22 98 Q60 112 98 98" marker-start="url(#ahL)" marker-end="url(#ahL)"/>
+        </svg>
+        <figcaption><b>Skręt</b><span>przechyl w lewo / w prawo</span></figcaption>
+      </figure>
+
+      <figure class="tiltCard">
+        <svg viewBox="0 0 120 112" role="img" aria-label="Pochyl telefon do siebie albo od siebie, żeby skoczyć">
+          <defs>
+            <marker id="ahP" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+            </marker>
+          </defs>
+          <path class="swing" d="M26 20 Q52 6 78 20" marker-start="url(#ahP)" marker-end="url(#ahP)"/>
+          <line class="axis" x1="14" y1="84" x2="92" y2="84"/>
+          <g transform="translate(52,52)"><g class="rock rockFB">
+            <rect class="body" x="-9" y="-31" width="18" height="62" rx="6"/>
+            <line class="edge" x1="5" y1="-23" x2="5" y2="22"/>
+          </g></g>
+          <circle class="face" cx="98" cy="74" r="8"/>
+          <path class="face" d="M86 97 q12 -15 24 0"/>
+        </svg>
+        <figcaption><b>Skok</b><span>pochyl do siebie / od siebie</span></figcaption>
+      </figure>
+    </div>
+
     <h1>Ustaw pozycję zerową</h1>
     <p>Potrzymaj telefon dokładnie tak, jak wygodnie ci grać — pionowo, lekko pochylony ku sobie. Gdy będziesz gotowy, stuknij ekran, żeby zapisać tę pozycję jako środek.</p>
     <div class="modeNote" id="liveGammaNote">czujnik: czekam na odczyt…</div>
@@ -475,8 +543,8 @@
   // a log stood upright on its end — unmistakably not something to hop over
   function makeVerticalLogObstacle(){
     var mat = new THREE.MeshLambertMaterial({ color:0x5a3c22 });
-    var m = new THREE.Mesh(new THREE.CylinderGeometry(0.26,0.3,1.0,8), mat);
-    m.position.y = 0.5;
+    var m = new THREE.Mesh(new THREE.CylinderGeometry(0.26,0.32,1.75,8), mat);
+    m.position.y = 0.875;
     return { mesh:m, halfW:0.3, halfD:0.3, jumpable:false, canDazeBoar:true };
   }
   // three logs stacked in a pile (2 on the bottom, 1 nested on top) — lying
@@ -509,9 +577,9 @@
     // a couple of stubby branches for silhouette
     var branchMat = new THREE.MeshLambertMaterial({ color:0x4a3320 });
     for(var bi=0; bi<3; bi++){
-      var br = new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.08,0.4,5), branchMat);
-      br.position.set((bi-1)*L*0.28, 0.5, 0);
-      br.rotation.z = 0.6;
+      var br = new THREE.Mesh(new THREE.CylinderGeometry(0.05,0.08,0.34,5), branchMat);
+      br.position.set(0.2, (bi-1)*L*0.26, 0);
+      br.rotation.z = -Math.PI/2 + (Math.random()-0.5)*0.5;
       m.add(br);
     }
     return { mesh:m, halfW:L/2, halfD:0.32, jumpable:true, clearHeight:0.7, fixedX:true };
@@ -521,24 +589,25 @@
     var trunkMat = new THREE.MeshLambertMaterial({ color:0x4a3320 });
     var leafMat = new THREE.MeshLambertMaterial({ color:0x1f4a26 });
     var g = new THREE.Group();
-    var trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.17,0.21,1.3,7), trunkMat);
-    trunk.position.y = 0.65;
-    var leaf = new THREE.Mesh(new THREE.ConeGeometry(0.7,1.5,7), leafMat);
-    leaf.position.y = 1.7;
+    var trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.17,0.21,1.7,7), trunkMat);
+    trunk.position.y = 0.85;
+    var leaf = new THREE.Mesh(new THREE.ConeGeometry(0.7,1.6,7), leafMat);
+    leaf.position.y = 2.15;
     g.add(trunk, leaf);
     return { mesh:g, halfW:0.4, halfD:0.4, jumpable:false };
   }
   function makeRockObstacle(){
     var mat = new THREE.MeshLambertMaterial({ color:0x63625b });
-    var m = new THREE.Mesh(new THREE.DodecahedronGeometry(0.55,0), mat);
-    m.position.y = 0.5;
+    var m = new THREE.Mesh(new THREE.DodecahedronGeometry(0.58,0), mat);
+    m.scale.y = 1.55;            // a standing boulder, not a hoppable stone
+    m.position.y = 0.82;
     m.rotation.y = Math.random()*Math.PI;
     return { mesh:m, halfW:0.5, halfD:0.4, canDazeBoar:true };
   }
   function makeHayBaleObstacle(){
     var mat = new THREE.MeshLambertMaterial({ color:0xd9b25a });
-    var m = new THREE.Mesh(new THREE.CylinderGeometry(0.55,0.55,1.0,10), mat);
-    m.position.y = 0.55;
+    var m = new THREE.Mesh(new THREE.CylinderGeometry(0.55,0.55,1.75,10), mat);
+    m.position.y = 0.875;
     return { mesh:m, halfW:0.5, halfD:0.4, isHayBale:true, canDazeBoar:true };
   }
   // tall fence — too high to jump, must be dodged sideways
@@ -546,10 +615,10 @@
     var g = new THREE.Group();
     var mat = new THREE.MeshLambertMaterial({ color:0x8a6a3f });
     var rail = new THREE.Mesh(new THREE.BoxGeometry(2.0,0.14,0.14), mat);
-    rail.position.y = 1.25;
-    var rail2 = rail.clone(); rail2.position.y = 0.85;
-    var rail3 = rail.clone(); rail3.position.y = 0.45;
-    var p1 = new THREE.Mesh(new THREE.BoxGeometry(0.14,1.5,0.14), mat); p1.position.set(-0.9,0.75,0);
+    rail.position.y = 1.75;
+    var rail2 = rail.clone(); rail2.position.y = 1.15;
+    var rail3 = rail.clone(); rail3.position.y = 0.55;
+    var p1 = new THREE.Mesh(new THREE.BoxGeometry(0.14,2.0,0.14), mat); p1.position.set(-0.9,1.0,0);
     var p2 = p1.clone(); p2.position.x = 0.9;
     g.add(rail, rail2, rail3, p1, p2);
     return { mesh:g, halfW:0.95, halfD:0.14, jumpable:false, canDazeBoar:true };
@@ -631,9 +700,9 @@
     m.rotation.z = Math.PI/2;
     m.position.y = 0.22;
     for(var bi=0; bi<4; bi++){
-      var br = new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.06,0.3,5), mat);
-      br.position.set((bi-1.5)*width*0.22, 0.16, 0);
-      br.rotation.z = 0.7 + Math.random()*0.3;
+      var br = new THREE.Mesh(new THREE.CylinderGeometry(0.04,0.06,0.26,5), mat);
+      br.position.set(0.14, (bi-1.5)*width*0.2, 0);
+      br.rotation.z = -Math.PI/2 + (Math.random()-0.5)*0.5;
       m.add(br);
     }
     return m;
