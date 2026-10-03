@@ -168,6 +168,9 @@
   .board li.me{ background:rgba(232,150,60,.22); border:1px solid rgba(232,150,60,.5); }
   .boardEmpty{ font-size:12.5px; opacity:.5; padding:6px 0; }
   .boardHint{ font-size:12px; opacity:.6; }
+  .boardNote{ font-size:10.5px; opacity:.55; letter-spacing:.2px; text-align:center; }
+  .boardNote.live{ color:#8fd49a; opacity:.75; }
+  .boardNote.local{ color:var(--accent); opacity:.7; }
   .modeNote{ font-size:11.5px; opacity:.55; margin-top:2px; }
   .debugTag{
     position:absolute;
@@ -301,6 +304,7 @@
         <button class="pick" data-board="camp">⛺ Obóz</button>
       </div>
       <ol class="board" id="boardAll"></ol>
+      <div class="boardNote" id="boardNoteAll"></div>
     </div>
     <button class="btn" id="boardCloseBtn">Wróć</button>
   </div>
@@ -321,6 +325,7 @@
     <div class="boardWrap">
       <div class="boardTitle" id="boardTitle">najlepsze wyniki</div>
       <ol class="board" id="board"></ol>
+      <div class="boardNote" id="boardNote"></div>
       <div class="nickRow hidden" id="overNickRow">
         <span class="boardHint">wpisz nick, żeby zapisać wynik</span>
         <button class="pick" id="overNickBtn">✏️ Dodaj nick</button>
@@ -373,6 +378,8 @@
   var boardAll = document.getElementById('boardAll');
   var boardEl = document.getElementById('board');
   var boardTitle = document.getElementById('boardTitle');
+  var boardNote = document.getElementById('boardNote');
+  var boardNoteAll = document.getElementById('boardNoteAll');
   var overNickRow = document.getElementById('overNickRow');
   var overNickBtn = document.getElementById('overNickBtn');
   var overNickInput = document.getElementById('overNickInput');
@@ -389,28 +396,27 @@
   var liveGammaNote = document.getElementById('liveGammaNote');
 
 
-  // ---------- NICKNAME + SCORE TABLE ----------
-  // Everything lives in this browser's localStorage: no server behind the
-  // game, so the table is this device's. That suits a phone handed round a
-  // group — each player types their nick and their best run is kept.
+  // ---------- NICKNAME + SHARED SCORE TABLE ----------
+  // One table for everybody. Scores live in a Firebase Realtime Database,
+  // reached with plain fetch (no SDK, so the game stays one file). Paste the
+  // database URL into CLOUD_URL below and every phone sees the same table.
+  // Leave it empty and the game still works — it just keeps the table on this
+  // device instead, and says so.
+  var CLOUD_URL = '';   // <-- np. 'https://dzik-gra-default-rtdb.europe-west1.firebasedatabase.app'
+
   var NICK_KEY = 'dzik3d_nick';
   var BOARD_LIMIT = 10;
+  var CLOUD_TIMEOUT = 6000;
   var playerNick = '';
   try{ playerNick = localStorage.getItem(NICK_KEY) || ''; }catch(e){ playerNick = ''; }
 
   // a run that finished before a nick was set, waiting to be claimed
   var pendingScore = null;
+  // last known rows per mode, so a render never has to wait on the network
+  var boardCache = {};
+  var cloudOnline = null;   // null = not tried yet, true/false afterwards
 
-  function boardKey(mode){ return 'dzik3d_board_' + mode; }
-  function loadBoard(mode){
-    try{
-      var rows = JSON.parse(localStorage.getItem(boardKey(mode)) || '[]');
-      return Array.isArray(rows) ? rows : [];
-    }catch(e){ return []; }
-  }
-  function storeBoard(mode, rows){
-    try{ localStorage.setItem(boardKey(mode), JSON.stringify(rows.slice(0, BOARD_LIMIT))); }catch(e){}
-  }
+  function cloudEnabled(){ return !!CLOUD_URL; }
   function scoreSuffix(mode){ return (mode === 'camp') ? ' zad.' : ' m'; }
   function boardLabel(mode){
     if(mode === 'camp') return 'najlepsi na obozie';
@@ -418,26 +424,124 @@
     return 'najlepsi w ucieczce';
   }
 
+  // ---- local copy (offline cache, and the whole table when CLOUD_URL is empty)
+  function localKey(mode){ return 'dzik3d_board_' + mode; }
+  function loadLocal(mode){
+    try{
+      var rows = JSON.parse(localStorage.getItem(localKey(mode)) || '[]');
+      return Array.isArray(rows) ? rows : [];
+    }catch(e){ return []; }
+  }
+  function storeLocal(mode, rows){
+    try{ localStorage.setItem(localKey(mode), JSON.stringify(rows.slice(0, BOARD_LIMIT))); }catch(e){}
+  }
+
   // one row per nick — their best run — so the table reads as a list of
   // players rather than one person's run history
-  function recordScore(mode, nick, score, cones){
-    var rows = loadBoard(mode);
+  function mergeRow(rows, nick, score, cones){
     var mine = null;
     for(var i=0;i<rows.length;i++){
       if(rows[i].nick === nick){ mine = rows[i]; break; }
     }
-    if(mine){
-      // the cones shown are the ones from the run that set this best
-      if(score > mine.score){ mine.score = score; mine.cones = cones; }
-    }
+    // the cones shown are the ones from the run that set this best
+    if(mine){ if(score > mine.score){ mine.score = score; mine.cones = cones; } }
     else { rows.push({ nick: nick, score: score, cones: cones }); }
     rows.sort(function(a,b){ return b.score - a.score; });
-    rows = rows.slice(0, BOARD_LIMIT);
-    storeBoard(mode, rows);
-    for(var j=0;j<rows.length;j++){
-      if(rows[j].nick === nick) return j;   // -1 if they didn't make the cut
+    return rows;
+  }
+
+  // the database keys rows by nick, so a player keeps one row however many
+  // phones they play on. RTDB forbids . $ # [ ] / in a key.
+  function nickKey(nick){
+    return nick.toLowerCase().replace(/[.$#\[\]\/\s]+/g, '_').slice(0, 24) || 'gracz';
+  }
+
+  function withTimeout(promise, ms){
+    return new Promise(function(resolve, reject){
+      var done = false;
+      var t = setTimeout(function(){ if(!done){ done = true; reject(new Error('timeout')); } }, ms);
+      promise.then(function(v){ if(!done){ done = true; clearTimeout(t); resolve(v); } },
+                   function(e){ if(!done){ done = true; clearTimeout(t); reject(e); } });
+    });
+  }
+
+  function cloudFetch(path, opts){
+    return withTimeout(fetch(CLOUD_URL.replace(/\/$/, '') + path, opts), CLOUD_TIMEOUT)
+      .then(function(res){
+        if(!res.ok) throw new Error('HTTP ' + res.status);
+        return res.json();
+      });
+  }
+
+  // RTDB hands back an object keyed by nick; flatten it to a sorted array
+  function rowsFromCloud(obj){
+    var rows = [];
+    if(obj && typeof obj === 'object'){
+      for(var k in obj){
+        if(!Object.prototype.hasOwnProperty.call(obj, k)) continue;
+        var r = obj[k];
+        if(r && typeof r.nick === 'string' && typeof r.score === 'number'){
+          rows.push({ nick: r.nick, score: r.score, cones: r.cones || 0 });
+        }
+      }
     }
-    return -1;
+    rows.sort(function(a,b){ return b.score - a.score; });
+    return rows;
+  }
+
+  // Read the shared table. Falls back to this device's copy whenever the
+  // database isn't configured or can't be reached, so the screen always shows
+  // something rather than an error.
+  function fetchBoard(mode){
+    if(!cloudEnabled()){
+      cloudOnline = false;
+      var local = loadLocal(mode);
+      boardCache[mode] = local;
+      return Promise.resolve(local);
+    }
+    return cloudFetch('/boards/' + mode + '.json', { cache: 'no-store' })
+      .then(function(obj){
+        cloudOnline = true;
+        var rows = rowsFromCloud(obj).slice(0, BOARD_LIMIT);
+        boardCache[mode] = rows;
+        storeLocal(mode, rows);   // keep a copy for the next offline moment
+        return rows;
+      })
+      .catch(function(){
+        cloudOnline = false;
+        var cached = loadLocal(mode);
+        boardCache[mode] = cached;
+        return cached;
+      });
+  }
+
+  // Send a run up, but only when it beats what that nick already has there.
+  function pushScore(mode, nick, score, cones){
+    if(!cloudEnabled()) return Promise.reject(new Error('offline'));
+    var path = '/boards/' + mode + '/' + nickKey(nick) + '.json';
+    return cloudFetch(path, { cache: 'no-store' }).then(function(existing){
+      if(existing && typeof existing.score === 'number' && existing.score >= score){
+        return false;   // their earlier run was better; leave it alone
+      }
+      return cloudFetch(path, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nick: nick, score: score, cones: cones, ts: Date.now() })
+      }).then(function(){ return true; });
+    });
+  }
+
+  // Record a run: always kept on this device, and pushed to the shared table
+  // when there is one. Returns the row index to highlight, from the table as
+  // it looks right now.
+  function recordScore(mode, nick, score, cones){
+    var rows = mergeRow((boardCache[mode] || loadLocal(mode)).slice(), nick, score, cones)
+                 .slice(0, BOARD_LIMIT);
+    boardCache[mode] = rows;
+    storeLocal(mode, rows);
+    var idx = -1;
+    for(var j=0;j<rows.length;j++){ if(rows[j].nick === nick){ idx = j; break; } }
+    return idx;
   }
 
   var PINECONE_SVG = '<svg viewBox="0 0 24 30" width="10" height="12.5" aria-hidden="true">' +
@@ -445,13 +549,14 @@
     '<path d="M6.5 10 L17.5 10 M5.5 15 L18.5 15 M6.5 20 L17.5 20" stroke="#8a5f22" stroke-width="1.3" stroke-linecap="round"/></svg>';
 
   function renderBoard(listEl, mode, highlightIdx){
-    var rows = loadBoard(mode);
+    var rows = boardCache[mode] || loadLocal(mode);
     listEl.innerHTML = '';
     if(!rows.length){
       var empty = document.createElement('li');
       empty.className = 'boardEmpty';
       empty.textContent = 'Jeszcze nikt tu nie biegał.';
       listEl.appendChild(empty);
+      updateBoardNote();
       return;
     }
     rows.forEach(function(r, i){
@@ -472,6 +577,50 @@
       }
       listEl.appendChild(li);
     });
+    updateBoardNote();
+  }
+
+  // says plainly whether this is the table everyone shares or just this phone's
+  function updateBoardNote(){
+    var txt, cls;
+    if(!cloudEnabled()){ txt = '📱 tabela tylko na tym telefonie'; cls = 'local'; }
+    else if(cloudOnline === false){ txt = '📡 brak połączenia — pokazuję ostatnio wczytaną tabelę'; cls = 'local'; }
+    else if(cloudOnline === null){ txt = '⏳ wczytuję wspólną tabelę…'; cls = ''; }
+    else { txt = '🌍 wspólna tabela — wszystkie telefony'; cls = 'live'; }
+    [boardNote, boardNoteAll].forEach(function(el){
+      if(!el) return;
+      el.textContent = txt;
+      el.className = 'boardNote ' + cls;
+    });
+  }
+
+  // fetch the shared table, then redraw
+  function showBoard(listEl, mode, highlightIdx){
+    renderBoard(listEl, mode, highlightIdx);
+    fetchBoard(mode).then(function(){
+      // keep this run's own row visible even if the shared table outranks it
+      if(highlightIdx >= 0 && playerNick){
+        var rows = boardCache[mode] || [];
+        highlightIdx = -1;
+        for(var i=0;i<rows.length;i++){ if(rows[i].nick === playerNick){ highlightIdx = i; break; } }
+      }
+      renderBoard(listEl, mode, highlightIdx);
+    });
+  }
+
+  // publish the run to the shared table, then redraw from what everyone sees
+  function submitScore(mode, score, cones){
+    if(!cloudEnabled()){ updateBoardNote(); return; }
+    pushScore(mode, playerNick, score, cones)
+      .then(function(){ cloudOnline = true; })
+      .catch(function(){ cloudOnline = false; })
+      .then(function(){
+        var idx = -1;
+        return fetchBoard(mode).then(function(rows){
+          for(var i=0;i<rows.length;i++){ if(rows[i].nick === playerNick){ idx = i; break; } }
+          renderBoard(boardEl, mode, idx);
+        });
+      });
   }
 
   function showNick(){
@@ -499,10 +648,12 @@
     showNick();
     // a run that ended before the nick existed now gets its owner
     if(pendingScore){
-      var idx = recordScore(pendingScore.mode, playerNick, pendingScore.score, pendingScore.cones);
-      renderBoard(boardEl, pendingScore.mode, idx);
+      var claimed = pendingScore;
+      var idx = recordScore(claimed.mode, playerNick, claimed.score, claimed.cones);
+      renderBoard(boardEl, claimed.mode, idx);
       overNickRow.classList.add('hidden');
       pendingScore = null;
+      submitScore(claimed.mode, claimed.score, claimed.cones);
     }
   }
   function wireNick(btn, inputEl){
@@ -519,7 +670,7 @@
   boardBtn.addEventListener('click', function(){
     startScreen.classList.add('hidden');
     boardScreen.classList.remove('hidden');
-    renderBoard(boardAll, boardTab, -1);
+    showBoard(boardAll, boardTab, -1);
   });
   boardCloseBtn.addEventListener('click', function(){
     boardScreen.classList.add('hidden');
@@ -531,7 +682,7 @@
       Array.prototype.forEach.call(boardScreen.querySelectorAll('.boardTabs .pick'), function(t){
         t.classList.toggle('selected', t === tab);
       });
-      renderBoard(boardAll, boardTab, -1);
+      showBoard(boardAll, boardTab, -1);
     });
   });
 
@@ -1989,10 +2140,11 @@
       pendingScore = null;
       overNickRow.classList.add('hidden');
       renderBoard(boardEl, gameMode, recordScore(gameMode, playerNick, runScore, pineconeTotal));
+      submitScore(gameMode, runScore, pineconeTotal);
     } else {
       pendingScore = { mode: gameMode, score: runScore, cones: pineconeTotal };
       overNickRow.classList.remove('hidden');
-      renderBoard(boardEl, gameMode, -1);
+      showBoard(boardEl, gameMode, -1);
     }
     overNickInput.classList.add('hidden');
 
