@@ -402,7 +402,7 @@
   // database URL into CLOUD_URL below and every phone sees the same table.
   // Leave it empty and the game still works — it just keeps the table on this
   // device instead, and says so.
-  var CLOUD_URL = '';   // <-- np. 'https://dzik-gra-default-rtdb.europe-west1.firebasedatabase.app'
+  var CLOUD_URL = 'https://dzikgoniharcerza-default-rtdb.firebaseio.com';
 
   var NICK_KEY = 'dzik3d_nick';
   var BOARD_LIMIT = 10;
@@ -415,6 +415,7 @@
   // last known rows per mode, so a render never has to wait on the network
   var boardCache = {};
   var cloudOnline = null;   // null = not tried yet, true/false afterwards
+  var cloudDenied = false;  // the database answered, but refused — a rules problem
 
   function cloudEnabled(){ return !!CLOUD_URL; }
   function scoreSuffix(mode){ return (mode === 'camp') ? ' zad.' : ' m'; }
@@ -468,7 +469,13 @@
   function cloudFetch(path, opts){
     return withTimeout(fetch(CLOUD_URL.replace(/\/$/, '') + path, opts), CLOUD_TIMEOUT)
       .then(function(res){
-        if(!res.ok) throw new Error('HTTP ' + res.status);
+        if(!res.ok){
+          var err = new Error('HTTP ' + res.status);
+          // 401/403 means the database replied and said no: the rules are
+          // wrong or expired, which is nothing like being offline
+          err.denied = (res.status === 401 || res.status === 403);
+          throw err;
+        }
         return res.json();
       });
   }
@@ -507,8 +514,9 @@
         storeLocal(mode, rows);   // keep a copy for the next offline moment
         return rows;
       })
-      .catch(function(){
+      .catch(function(err){
         cloudOnline = false;
+        cloudDenied = !!(err && err.denied);
         var cached = loadLocal(mode);
         boardCache[mode] = cached;
         return cached;
@@ -584,6 +592,7 @@
   function updateBoardNote(){
     var txt, cls;
     if(!cloudEnabled()){ txt = '📱 tabela tylko na tym telefonie'; cls = 'local'; }
+    else if(cloudOnline === false && cloudDenied){ txt = '🔒 baza odrzuca połączenie — sprawdź reguły w Firebase'; cls = 'local'; }
     else if(cloudOnline === false){ txt = '📡 brak połączenia — pokazuję ostatnio wczytaną tabelę'; cls = 'local'; }
     else if(cloudOnline === null){ txt = '⏳ wczytuję wspólną tabelę…'; cls = ''; }
     else { txt = '🌍 wspólna tabela — wszystkie telefony'; cls = 'live'; }
@@ -612,8 +621,8 @@
   function submitScore(mode, score, cones){
     if(!cloudEnabled()){ updateBoardNote(); return; }
     pushScore(mode, playerNick, score, cones)
-      .then(function(){ cloudOnline = true; })
-      .catch(function(){ cloudOnline = false; })
+      .then(function(){ cloudOnline = true; cloudDenied = false; })
+      .catch(function(err){ cloudOnline = false; cloudDenied = !!(err && err.denied); })
       .then(function(){
         var idx = -1;
         return fetchBoard(mode).then(function(rows){

@@ -1,24 +1,24 @@
-# Wspólna tabela wyników — konfiguracja (ok. 3 minuty)
+# Wspólna tabela wyników — stan i ostatni krok
 
-Gra jest statyczną stroną na GitHub Pages, więc żeby **wszystkie telefony
-widziały jedną tabelę**, potrzebna jest darmowa baza w chmurze. Poniżej
-najprostsza opcja: Firebase Realtime Database (konto Google, bez karty).
+Adres bazy jest już wpisany w `index.html`:
 
-Dopóki tego nie ustawisz, gra działa normalnie — tabela jest wtedy tylko
-na danym telefonie i gra wprost to pisze pod tabelą.
+```js
+var CLOUD_URL = 'https://dzikgoniharcerza-default-rtdb.firebaseio.com';
+```
 
-## Krok po kroku
+Zostaje **jedna rzecz do sprawdzenia: reguły bazy.**
 
-1. Wejdź na https://console.firebase.google.com i zaloguj się kontem Google.
-2. **Add project** → nazwa np. `dzik-gra` → Google Analytics możesz wyłączyć → **Create project**.
-3. W menu po lewej: **Build → Realtime Database** → **Create Database**.
-   - Lokalizacja: wybierz europejską (np. `europe-west1`).
-   - Reguły: wybierz **Start in test mode** (poprawimy je w kroku 5).
-4. Skopiuj adres bazy z góry strony. Wygląda tak:
-   `https://dzik-gra-default-rtdb.europe-west1.firebasedatabase.app`
-5. Zakładka **Rules** → wklej poniższe i kliknij **Publish**.
-   Pozwalają każdemu czytać i dopisywać wynik, ale wymuszają poprawny
-   kształt danych, więc nikt nie wrzuci tam śmieci:
+## Dlaczego to ważne
+
+Jeśli przy zakładaniu bazy wybrałeś **„Start in test mode"**, Firebase wpisał
+reguły z datą ważności — działają przez 30 dni, a potem **baza przestaje
+przyjmować i oddawać dane**. Tabela zacznie wtedy pokazywać
+„🔒 baza odrzuca połączenie". Dlatego warto podmienić je teraz na stałe.
+
+## Reguły do wklejenia
+
+Firebase Console → Twój projekt → **Realtime Database** → zakładka **Rules** →
+zaznacz wszystko, wklej poniższe, **Publish**:
 
 ```json
 {
@@ -41,35 +41,41 @@ na danym telefonie i gra wprost to pisze pod tabelą.
 }
 ```
 
-6. W pliku `index.html` znajdź linię (jest blisko komentarza
-   `SHARED SCORE TABLE`):
+Bez daty ważności, a przy tym wymuszają poprawny kształt danych: nick to tekst
+do 12 znaków, wynik to liczba w rozsądnym zakresie, nic innego nie przejdzie.
 
-```js
-var CLOUD_URL = '';
-```
+## Jak sprawdzić, czy działa
 
-   i wklej w cudzysłów adres z kroku 4:
+Otwórz grę na telefonie, zagraj jedną rundę i spójrz **pod tabelę** na ekranie
+końcowym:
 
-```js
-var CLOUD_URL = 'https://dzik-gra-default-rtdb.europe-west1.firebasedatabase.app';
-```
+| Napis | Znaczenie |
+|---|---|
+| 🌍 wspólna tabela — wszystkie telefony | działa, wyniki idą do bazy |
+| 🔒 baza odrzuca połączenie — sprawdź reguły w Firebase | reguły złe albo wygasły → wklej te wyżej |
+| 📡 brak połączenia | telefon nie ma internetu; wynik zapisał się lokalnie |
+| 📱 tabela tylko na tym telefonie | `CLOUD_URL` jest pusty (nie dotyczy, jest wpisany) |
 
-7. Zapisz, zrób commit i push. Gotowe — pod tabelą pojawi się
-   „🌍 wspólna tabela — wszystkie telefony".
+Możesz też podejrzeć dane wprost w Firebase Console → Realtime Database →
+zakładka **Data**: po pierwszej rundzie pojawi się tam gałąź
+`boards/chase/<nick>`.
 
-## Czego się spodziewać
+## Jak to działa
 
-- Jeden wiersz na nick: gracz ma jeden wynik niezależnie od tego, na ilu
-  telefonach gra. Słabszy przebieg nie nadpisuje lepszego.
-- Brak internetu w telefonie → gra pokazuje ostatnio wczytaną tabelę
-  i pisze „📡 brak połączenia". Wynik i tak zapisze się lokalnie.
-- Darmowy limit Firebase (1 GB transferu/mies.) jest przy tej skali
-  nie do wyczerpania — jeden odczyt tabeli to kilkaset bajtów.
+- **Jeden wiersz na nick** — gracz ma jeden wynik niezależnie od tego, na ilu
+  telefonach gra.
+- **Słabszy przebieg nie nadpisuje lepszego** — przed zapisem gra czyta wynik
+  z bazy i zapisuje tylko wtedy, gdy nowy jest lepszy.
+- **Osobna tabela dla każdego trybu** (`boards/chase`, `boards/pursuit`,
+  `boards/camp`) — metry i zadania nie są porównywalne.
+- **Bez SDK**, zwykłe `fetch` — gra zostaje jednym plikiem bez budowania.
+- Brak internetu nie psuje gry: pokazuje ostatnio wczytaną tabelę, a wynik
+  i tak ląduje w pamięci telefonu.
 
 ## Uwaga o bezpieczeństwie
 
-Adres bazy jest widoczny w źródle strony — tak musi być, bo to przeglądarka
-gracza łączy się z bazą. Reguły z kroku 5 ograniczają, **co** można zapisać
-(poprawny kształt, limity długości i wartości), ale ktoś uparty nadal może
-dopisać wymyślony wynik. Przy grze dla drużyny to akceptowalne; gdyby kiedyś
-przeszkadzało, trzeba by dołożyć logowanie albo własny serwer pośredniczący.
+Adres bazy jest widoczny w źródle strony — inaczej się nie da, bo to
+przeglądarka gracza łączy się z bazą. Reguły wyżej ograniczają, **co** można
+zapisać, ale ktoś uparty nadal może dopisać zmyślony wynik. Przy grze dla
+drużyny to akceptowalne. Gdyby kiedyś przeszkadzało, trzeba by dołożyć
+logowanie albo własny serwer pośredniczący.
