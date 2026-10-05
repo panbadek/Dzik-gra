@@ -72,6 +72,14 @@ zakładka **Data**: po pierwszej rundzie pojawi się tam gałąź
 - Brak internetu nie psuje gry: pokazuje ostatnio wczytaną tabelę, a wynik
   i tak ląduje w pamięci telefonu.
 
+## Usuwanie wyników z bazy
+
+Jeśli skasujesz czyjś wynik w Firebase Console, a ten gracz ma go jeszcze
+zapisanego w swoim telefonie, przy najbliższym wejściu do gry wyśle go z
+powrotem. To celowe: telefon nigdy nie wyrzuca swojej kopii, bo właśnie to
+kiedyś skasowało tabelę. Żeby wynik zniknął na stałe, skasuj go w bazie i
+poproś tego gracza o wyczyszczenie danych strony w przeglądarce.
+
 ## Uwaga o bezpieczeństwie
 
 Adres bazy jest widoczny w źródle strony — inaczej się nie da, bo to

@@ -480,6 +480,46 @@
       });
   }
 
+  // Best score per nick across two lists. The phone's own copy is never
+  // thrown away just because the shared table has no row for it yet — that is
+  // what erased scores set before the table was shared, and it would erase
+  // every score set while offline.
+  function unionRows(a, b){
+    var byNick = {};
+    [a, b].forEach(function(list){
+      (list || []).forEach(function(r){
+        if(!r || typeof r.nick !== 'string' || typeof r.score !== 'number') return;
+        var cur = byNick[r.nick];
+        if(!cur || r.score > cur.score){
+          byNick[r.nick] = { nick: r.nick, score: r.score, cones: r.cones || 0 };
+        }
+      });
+    });
+    var out = [];
+    for(var k in byNick){
+      if(Object.prototype.hasOwnProperty.call(byNick, k)) out.push(byNick[k]);
+    }
+    out.sort(function(x,y){ return y.score - x.score; });
+    return out;
+  }
+
+  // Publish rows this phone has that the shared table is missing or beats, so
+  // scores made offline — or before the table was shared — join it instead of
+  // being dropped. pushScore re-checks before writing, so once they match this
+  // sends nothing.
+  function syncUp(mode, cloudRows, localRows){
+    if(!cloudEnabled()) return;
+    var cloudByNick = {};
+    (cloudRows || []).forEach(function(r){ cloudByNick[r.nick] = r.score; });
+    (localRows || []).slice(0, BOARD_LIMIT).forEach(function(r){
+      if(!r || typeof r.nick !== 'string' || typeof r.score !== 'number') return;
+      var there = cloudByNick[r.nick];
+      if(there === undefined || r.score > there){
+        pushScore(mode, r.nick, r.score, r.cones || 0).catch(function(){});
+      }
+    });
+  }
+
   // RTDB hands back an object keyed by nick; flatten it to a sorted array
   function rowsFromCloud(obj){
     var rows = [];
@@ -509,10 +549,14 @@
     return cloudFetch('/boards/' + mode + '.json', { cache: 'no-store' })
       .then(function(obj){
         cloudOnline = true;
-        var rows = rowsFromCloud(obj).slice(0, BOARD_LIMIT);
-        boardCache[mode] = rows;
-        storeLocal(mode, rows);   // keep a copy for the next offline moment
-        return rows;
+        cloudDenied = false;
+        var cloudRows = rowsFromCloud(obj);
+        var localRows = loadLocal(mode);
+        var merged = unionRows(cloudRows, localRows).slice(0, BOARD_LIMIT);
+        boardCache[mode] = merged;
+        storeLocal(mode, merged);        // offline copy, never emptied by a bare read
+        syncUp(mode, cloudRows, localRows);
+        return merged;
       })
       .catch(function(err){
         cloudOnline = false;
