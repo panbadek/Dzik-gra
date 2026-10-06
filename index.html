@@ -819,6 +819,14 @@
   // hurdles — from landing closer together than a runner could clear
   var MIN_GAP_GENERAL = 5;
   var MIN_GAP_HURDLE = 13;
+  // Two things to jump must stay far enough apart that the scout has landed
+  // from the first before the second arrives. That distance depends on how
+  // fast he is going, so now that the chase winds up to a higher top speed
+  // the fixed 13 is only a floor.
+  function minHurdleGap(){
+    var airtime = 2 * JUMP_VELOCITY / -GRAVITY;
+    return Math.max(MIN_GAP_HURDLE, speed * airtime * 1.25);
+  }
   var lastObstacleZ = 1e9;
   var lastObstacleWasHurdle = false;
 
@@ -1250,20 +1258,35 @@
     }
 
     // obstacles: 0-2 per chunk, skip a safe intro chunk and the river (swum, not dodged)
+    // the chase thickens with distance; the spacing guard below still refuses
+    // anything too close to the last one, so it can never become a wall
+    var dRamp = densityRamp();
     var obstacleCount;
     if(zone === ZONE.RIVER || chunks.length <= 2){ obstacleCount = 0; }
     // the bog already fights the scout, so it stays sparse
-    else if(zone === ZONE.SWAMP){ obstacleCount = (Math.random() < 0.7) ? 1 : 0; }
-    else { obstacleCount = 1 + (Math.random()<0.55 ? 1 : 0); }
+    else if(zone === ZONE.SWAMP){ obstacleCount = (Math.random() < 0.7 + dRamp*0.25) ? 1 : 0; }
+    else {
+      obstacleCount = 1
+        + (Math.random() < 0.55 + dRamp*0.45 ? 1 : 0)
+        + (Math.random() < dRamp*0.8 ? 1 : 0);
+    }
+    // Lay them out in order along the chunk rather than at independent random
+    // points: drawn independently, a later one often landed behind an earlier
+    // one and the spacing guard below simply threw it away, so raising the
+    // count barely changed what reached the road. Slots run in the order the
+    // scout meets them (descending z), which is what the guard compares.
+    var obstacleSpan = CHUNK_LEN - 6;
+    var obstacleSlot = obstacleCount > 0 ? obstacleSpan / obstacleCount : obstacleSpan;
     for(var j=0;j<obstacleCount;j++){
-      var oz = centerZ + (Math.random()-0.5)*(CHUNK_LEN-6);
+      var slotTop = centerZ + obstacleSpan/2 - j*obstacleSlot;
+      var oz = slotTop - Math.random()*obstacleSlot;
       // nothing to hop over in the bog — mud kills the jump, so everything
       // there has to be sidestepped instead
       var wantHurdle = (zone !== ZONE.SWAMP) && (Math.random() < 0.4);
 
       // enforce minimum spacing from the previously placed obstacle in the
       // spawn sequence, so two jumpable hurdles never end up back-to-back
-      var requiredGap = (wantHurdle || lastObstacleWasHurdle) ? MIN_GAP_HURDLE : MIN_GAP_GENERAL;
+      var requiredGap = (wantHurdle || lastObstacleWasHurdle) ? minHurdleGap() : MIN_GAP_GENERAL;
       if(lastObstacleZ - oz < requiredGap){
         continue; // too close to the previous obstacle — skip this slot
       }
@@ -1758,6 +1781,24 @@
   // how hard the scout's stride ramps up with distance run
   var SPEED_RAMP = 0.03;
   var SPEED_RAMP_CAP = 4.5;
+  // The chase is the mode that escalates: scout and boar wind up faster and
+  // keep climbing further than elsewhere. Pursuit keeps the gentler ramp,
+  // because its boar is deliberately slow to build speed.
+  var CHASE_SPEED_RAMP = 0.05;
+  var CHASE_SPEED_RAMP_CAP = 6.5;
+  // metres over which the chase works up to its full obstacle density
+  var CHASE_DENSITY_FULL = 700;
+  function speedRamp(){
+    return (gameMode === 'chase') ? CHASE_SPEED_RAMP : SPEED_RAMP;
+  }
+  function speedRampCap(){
+    return (gameMode === 'chase') ? CHASE_SPEED_RAMP_CAP : SPEED_RAMP_CAP;
+  }
+  // 0 at the start of a chase, 1 once it is in full flow; flat elsewhere
+  function densityRamp(){
+    if(gameMode !== 'chase') return 0;
+    return Math.min(distance / CHASE_DENSITY_FULL, 1);
+  }
 
   // pursuit mode: the boar runs at its own speed rather than being dragged
   // along at a fixed distance, so the gap swings wide and has to read
@@ -1989,10 +2030,13 @@
     boar.visible = (gameMode !== 'camp');
     applyModeHUD();
 
+    // distance first: clearWorld() spawns the opening chunks, and in the
+    // chase their obstacle density is read off it — otherwise a fresh run
+    // would open at the previous run's difficulty
+    distance = 0;
     clearWorld();
     playerX = 0; playerTargetX = 0;
     speed = baseSpeed;
-    distance = 0;
     catchGap = BASE_CATCH_GAP;
     runPhase = 0;
     playerY = 0; playerVY = 0; onGround = true;
@@ -2225,7 +2269,7 @@
     // the scout's clean running speed, before any stumble — the boar paces
     // itself off this, so tripping costs the scout ground rather than
     // slowing his pursuer too
-    var scoutFullSpeed = (baseSpeed + Math.min(distance*SPEED_RAMP, SPEED_RAMP_CAP))
+    var scoutFullSpeed = (baseSpeed + Math.min(distance*speedRamp(), speedRampCap()))
                          * (1 - mudBlend*(1 - MUD_SPEED_FACTOR));
     if(pursuitStumbleTimer > 0){ pursuitStumbleTimer -= dt; }
     speed = scoutFullSpeed * (pursuitStumbleTimer > 0 ? PURSUIT_STUMBLE_SPEED : 1);
