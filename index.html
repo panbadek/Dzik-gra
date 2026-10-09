@@ -843,7 +843,7 @@
     { zone: ZONE.FOREST, w: 5 },
     { zone: ZONE.FIELD,  w: 3 },
     { zone: ZONE.SWAMP,  w: 2 },
-    { zone: ZONE.RIVER,  w: 1 }
+    { zone: ZONE.RIVER,  w: 2 }
   ];
   function pickNextZone(excludeZone){
     var pool = ZONE_WEIGHTS.filter(function(z){ return z.zone !== excludeZone; });
@@ -1351,7 +1351,10 @@
       if(Math.random() < 0.65){
         currentZone = pickNextZone(currentZone);
       }
-      if(currentZone === ZONE.RIVER){ zoneRemaining = 14 + Math.random()*10; }
+      // long enough for the entry bank plus one or two chunks of open water:
+      // at 14-24 the whole river fitted inside its own bank chunk and no
+      // water was ever drawn
+      if(currentZone === ZONE.RIVER){ zoneRemaining = 38 + Math.random()*28; }
       else if(currentZone === ZONE.SWAMP){ zoneRemaining = 26 + Math.random()*18; }
       else { zoneRemaining = 40 + Math.random()*35; }
     }
