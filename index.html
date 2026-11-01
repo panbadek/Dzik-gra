@@ -244,6 +244,7 @@
       <input class="nickInput hidden" id="nickInput" maxlength="12" placeholder="Twój nick" autocomplete="off" autocapitalize="off" spellcheck="false">
     </div>
 
+    <div class="modeNote" id="buildStamp">wersja 2026-11-01</div>
     <div class="modeNote" id="supportNote"></div>
     <div class="modeNote">Jeśli grasz z podglądu w aplikacji Claude, otwórz ten link wprost w przeglądarce telefonu (Chrome/Safari) — osadzony podgląd czasem blokuje czujnik przechyłu.</div>
   </div>
@@ -861,6 +862,7 @@
   // the player right now (currentZone itself tracks the *frontier* zone,
   // several chunks ahead of where the player is standing)
   var zoneMarkers = [];
+  var lastKnownZone = ZONE.FOREST; // the zone the scout was last actually standing in
   var lastChunkZone = null; // zone of the previously spawned chunk, for blending at the seam
 
   function lerpColor(hexA, hexB, t){
@@ -896,10 +898,13 @@
     return 'rzeka';
   }
   function getActiveZoneMarker(){
+    // measured where the scout is drawn, not at the origin, so the water's
+    // edge lines up with him — the gap is 1.7 in pursuit, enough to see
+    var pz = playerVisualZ();
     for(var zi=0; zi<zoneMarkers.length; zi++){
       var m = zoneMarkers[zi];
       var visZ = m.z + worldZ;
-      if(Math.abs(visZ) <= CHUNK_LEN/2) return m;
+      if(Math.abs(visZ - pz) <= CHUNK_LEN/2) return m;
     }
     return null;
   }
@@ -1370,6 +1375,7 @@
     currentZone = Math.random()<0.5?ZONE.FOREST:ZONE.FIELD;
     zoneRemaining = 40;
     lastChunkZone = null;
+    lastKnownZone = currentZone;
     world.position.z = 0;
     worldZ = 0;
     lastObstacleZ = 1e9;
@@ -2256,8 +2262,13 @@
     // which zone is actually under the scout right now (currentZone tracks
     // the frontier chunk, several chunks ahead of where he's standing) —
     // resolved first, because the bog changes how he moves this whole frame
+    // With no marker under the scout, fall back to the zone he was last
+    // known to be standing in. currentZone is the FRONTIER zone, several
+    // chunks ahead, so using it could put him in water while he is still on
+    // grass — or leave him running across a river.
     var zoneMarker = getActiveZoneMarker();
-    var activeZone = zoneMarker ? zoneMarker.zone : currentZone;
+    var activeZone = zoneMarker ? zoneMarker.zone : lastKnownZone;
+    lastKnownZone = activeZone;
     var wasInMud = inMud;
     inMud = (activeZone === ZONE.SWAMP);
     if(inMud && !wasInMud){ showToast('Bagno! Grzęźniesz — omijaj przeszkody bokiem, skok tu nie pomoże.', 2600); }
