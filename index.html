@@ -1633,16 +1633,15 @@
       d.position.set(
         player.position.x + (Math.random()-0.5)*0.3,
         player.position.y + 0.9 + Math.random()*0.3,
-        player.position.z + (Math.random()-0.5)*0.2
+        player.position.z - worldZ + (Math.random()-0.5)*0.2
       );
-      scene.add(d);
+      world.add(d);
       var ang = Math.random()*Math.PI*2;
       var spd = 0.5 + Math.random()*0.9;
       particles.push({
         mesh: d,
         vel: new THREE.Vector3(Math.cos(ang)*spd, 1.4 + Math.random()*1.0, Math.sin(ang)*spd),
-        life: 0.35 + Math.random()*0.25,
-        parent: scene
+        life: 0.45 + Math.random()*0.3
       });
     }
   }
@@ -1652,19 +1651,20 @@
   function spawnMudSplash(){
     for(var k=0;k<3;k++){
       var d = new THREE.Mesh(new THREE.BoxGeometry(0.07,0.05,0.07), MUD_SPLASH_MAT);
+      // placed in world space, so it scrolls away underfoot instead of
+      // hanging in the air beside a scout the ground is rushing past
       d.position.set(
         player.position.x + (Math.random()-0.5)*0.45,
         0.08,
-        player.position.z + (Math.random()-0.5)*0.3
+        player.position.z - worldZ + (Math.random()-0.5)*0.3
       );
-      scene.add(d);
+      world.add(d);
       var ang = Math.random()*Math.PI*2;
       var spd = 0.6 + Math.random()*1.0;
       particles.push({
         mesh: d,
         vel: new THREE.Vector3(Math.cos(ang)*spd, 1.1 + Math.random()*0.8, Math.sin(ang)*spd),
-        life: 0.3 + Math.random()*0.25,
-        parent: scene
+        life: 0.45 + Math.random()*0.3
       });
     }
   }
@@ -1820,9 +1820,6 @@
   var BOAR_DECEL = 3.0;
   var boarSpeed = 0;
   var PURSUIT_PLAYER_Z = -1.7;     // scout set further up the frame, boar behind him
-  var PURSUIT_STUMBLE_DURATION = 0.6;
-  var PURSUIT_STUMBLE_SPEED = 0.68;
-  var pursuitStumbleTimer = 0;
   var runPhase = 0;
   var clock = new THREE.Clock();
 
@@ -2047,7 +2044,6 @@
     boarSpeed = baseSpeed * BOAR_SPEED_RATIO;
     player.position.set(0, 0, playerVisualZ());
     playerShadow.position.z = playerVisualZ();
-    pursuitStumbleTimer = 0;
     player.rotation.x = 0;
     caughtTimer = 0;
     boarDazedTimer = 0;
@@ -2088,7 +2084,7 @@
 
   var MODE_DESC = {
     chase: 'Biegniesz przed siebie przez las, pola, bagna i rzeki, a dzik depcze ci po piętach. Wysokich przeszkód nie da się przeskoczyć — trzeba je wyminąć bokiem. Zbieraj szyszki leżące na ścieżce — po zebraniu 8 harcerz sam odwróci się i w zwolnionym tempie obrzuci nimi dzika. W rzece popłyniesz, a na bagnie ugrzęźniesz.',
-    pursuit: 'Harcerz biegnie dalej w kadrze, a dzik goni go własnym tempem — odrobinę szybszym niż jego, więc odległość realnie się kurczy i widać ją na ekranie. Na bagnie dzik grzęźnie tak samo jak harcerz. Szyszki zatrzymują go w miejscu i odrzucają na dystans startowy, a przeszkoda tylko przewraca harcerza (traci rozpęd) — grę kończy dopiero dogonienie przez dzika.',
+    pursuit: 'Harcerz biegnie dalej w kadrze, a dzik goni go własnym tempem — odrobinę szybszym niż jego, więc odległość realnie się kurczy i widać ją na ekranie. Na bagnie dzik grzęźnie tak samo jak harcerz. Szyszki zatrzymują go w miejscu i odrzucają na dystans startowy, a przeszkoda kończy bieg tak samo jak dogonienie przez dzika.',
     camp: 'Dzień na obozie: żadnego dzika, za to lista zadań i zegar. Zbieraj to, czego akurat potrzebuje obóz — drewno 🪵, wodę 🪣, prowiant 📦 i szyszki 🌰 — a każde wykonane zadanie dorzuca ' + CAMP_CHORE_BONUS + ' sekund. Uważaj: zderzenie z przeszkodą od razu kończy grę, tak samo jak koniec czasu.'
   };
 
@@ -2269,13 +2265,10 @@
     mudBlend += ((inMud ? 1 : 0) - mudBlend) * Math.min(1, dt*4);
 
     distance += speed*wdt;
-    // the scout's clean running speed, before any stumble — the boar paces
-    // itself off this, so tripping costs the scout ground rather than
-    // slowing his pursuer too
+    // the speed the boar paces itself off
     var scoutFullSpeed = (baseSpeed + Math.min(distance*speedRamp(), speedRampCap()))
                          * (1 - mudBlend*(1 - MUD_SPEED_FACTOR));
-    if(pursuitStumbleTimer > 0){ pursuitStumbleTimer -= dt; }
-    speed = scoutFullSpeed * (pursuitStumbleTimer > 0 ? PURSUIT_STUMBLE_SPEED : 1);
+    speed = scoutFullSpeed;
 
     // steering
     if(controlMode === 'tilt'){
@@ -2489,15 +2482,6 @@
           if(gameMode === 'camp'){
             campCrash();
             return;
-          }
-          // in pursuit the boar is what ends the run, so an obstacle only
-          // trips the scout up and hands the boar the ground he loses
-          if(gameMode === 'pursuit'){
-            world.remove(o.mesh);
-            obstacles.splice(i,1);
-            pursuitStumbleTimer = PURSUIT_STUMBLE_DURATION;
-            spawnMudSplash();
-            continue;
           }
           triggerCaught();
           return;
